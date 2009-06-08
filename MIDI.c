@@ -1,15 +1,14 @@
 /*
  * Modified by Alex Norman 6/3/2009 to work with the Encoder Board
- *
              LUFA Library
-     Copyright (C) Dean Camera, 2008.
+     Copyright (C) Dean Camera, 2009.
               
   dean [at] fourwalledcubicle [dot] com
       www.fourwalledcubicle.com
 */
 
 /*
-  Copyright 2008  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+  Copyright 2009  Dean Camera (dean [at] fourwalledcubicle [dot] com)
 
   Permission to use, copy, modify, and distribute this software
   and its documentation for any purpose and without fee is hereby
@@ -38,12 +37,15 @@
 
 #include "MIDI.h"
 #include "RingBuff.h"
+#include <util/delay.h>
 
-/* Project Tags, for reading out using the ButtLoad project */
-BUTTLOADTAG(ProjName,    "X37V ENCODERS");
-BUTTLOADTAG(BuildTime,   __TIME__);
-BUTTLOADTAG(BuildDate,   __DATE__);
-BUTTLOADTAG(LUFAVersion, "LUFA V" LUFA_VERSION_STRING);
+/* Scheduler Task List */
+TASK_LIST
+{
+	{ .Task = USB_USBTask          , .TaskStatus = TASK_STOP },
+	{ .Task = USB_MIDI_Task        , .TaskStatus = TASK_STOP },
+	{ .Task = SHIFT_REG_Task        , .TaskStatus = TASK_STOP },
+};
 
 //hold the data to send
 RingBuff_t Tx_Buffer;
@@ -130,39 +132,35 @@ int8_t decode(uint8_t enc_current, uint8_t enc_last){
 	return 0;
 }
 
-
-/* Scheduler Task List */
-TASK_LIST
-{
-	{ Task: USB_USBTask          , TaskStatus: TASK_STOP },
-	{ Task: USB_MIDI_Task        , TaskStatus: TASK_STOP },
-	{ Task: SHIFT_REG_Task        , TaskStatus: TASK_STOP },
-};
-
 /** Main program entry point. This routine configures the hardware required by the application, then
  *  starts the scheduler to run the application tasks.
  */
 int main(void)
 {
 	uint8_t i;
+
+	_delay_ms(100);
 	/* Disable watchdog if enabled by bootloader/fuses */
 	MCUSR &= ~(1 << WDRF);
 	wdt_disable();
 
-	/* Disable Clock Division */
-	SetSystemClockPrescaler(0);
+	/* Disable clock division */
+	clock_prescale_set(clock_div_1);
 
 	//init ringbuffer
 	Buffer_Initialize(&Tx_Buffer);
 
-	//init ports
-	DDRD |= _BV(PIND1) | _BV(PIND4);
+	//init ports [d6 is the LED]
+	DDRD |= _BV(PIND1) | _BV(PIND4) | _BV(PIND6);
 	DDRD &= ~_BV(PIND0);
 
 	//initially everything is 'up'
 	for(i = 0; i < (2 * NUMBOARDS); i++)
 		encoder_last[i] = button_last[i] = 0xFF;
-
+	
+	/* Indicate USB not ready */
+	UpdateStatus(Status_USBNotReady);
+	
 	/* Initialize Scheduler so that it can be used */
 	Scheduler_Init();
 
@@ -179,7 +177,8 @@ EVENT_HANDLER(USB_Connect)
 	/* Start USB management task */
 	Scheduler_SetTaskMode(USB_USBTask, TASK_RUN);
 
-	Scheduler_SetTaskMode(SHIFT_REG_Task, TASK_RUN);
+	/* Indicate USB enumerating */
+	UpdateStatus(Status_USBEnumerating);
 }
 
 /** Event handler for the USB_Disconnect event. This indicates that the device is no longer connected to a host via
@@ -191,6 +190,9 @@ EVENT_HANDLER(USB_Disconnect)
 	Scheduler_SetTaskMode(USB_MIDI_Task, TASK_STOP);
 	Scheduler_SetTaskMode(USB_USBTask, TASK_STOP);
 	Scheduler_SetTaskMode(SHIFT_REG_Task, TASK_STOP);
+
+	/* Indicate USB not ready */
+	UpdateStatus(Status_USBNotReady);
 }
 
 /** Event handler for the USB_ConfigurationChanged event. This is fired when the host set the current configuration
@@ -207,8 +209,42 @@ EVENT_HANDLER(USB_ConfigurationChanged)
 		                       ENDPOINT_DIR_IN, MIDI_STREAM_EPSIZE,
 	                           ENDPOINT_BANK_SINGLE);
 
+	/* Indicate USB connected and ready */
+	UpdateStatus(Status_USBReady);
+
 	/* Start MIDI task */
 	Scheduler_SetTaskMode(USB_MIDI_Task, TASK_RUN);
+	Scheduler_SetTaskMode(SHIFT_REG_Task, TASK_RUN);
+}
+
+/** Task to handle the generation of MIDI note change events in response to presses of the board joystick, and send them
+ *  to the host.
+ */
+TASK(USB_MIDI_Task)
+{
+	/* Select the MIDI IN stream */
+	Endpoint_SelectEndpoint(MIDI_STREAM_IN_EPNUM);
+
+	/* Check if endpoint is ready to be written to */
+	if (Endpoint_IsINReady())
+	{
+		if (Tx_Buffer.Elements > 1){
+			/* Wait until Serial Tx Endpoint Ready for Read/Write */
+			while (!(Endpoint_IsINReady()));
+			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
+				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
+				uint8_t val = Buffer_GetElement(&Tx_Buffer);
+				SendMIDICC(addr, val, 0, 0);
+			}
+		}
+	}
+
+	/* Select the MIDI OUT stream */
+	Endpoint_SelectEndpoint(MIDI_STREAM_OUT_EPNUM);
+
+	/* Check if endpoint is ready to be read from, if so discard its (unused) data */
+	if (Endpoint_IsOUTReceived())
+	  Endpoint_ClearOUT();
 }
 
 TASK(SHIFT_REG_Task)
@@ -342,42 +378,27 @@ TASK(SHIFT_REG_Task)
 	history = (history + 1) % HISTORY;
 }
 
-/** Task to handle the generation of MIDI note change events in response to presses of the board joystick, and send them
- *  to the host.
+/** Function to manage status updates to the user. This is done via LEDs on the given board, if available, but may be changed to
+ *  log to a serial port, or anything else that is suitable for status updates.
+ *
+ *  \param CurrentStatus  Current status of the system, from the MIDI_StatusCodes_t enum
  */
-TASK(USB_MIDI_Task)
+void UpdateStatus(uint8_t CurrentStatus)
 {
-	/* Select the MIDI IN stream */
-	Endpoint_SelectEndpoint(MIDI_STREAM_IN_EPNUM);
-
-	/* Check if endpoint is ready to be written to */
-	if (Endpoint_ReadWriteAllowed())
+	//by default turn off the LED
+	PORTD |= _BV(PORTD6);
+	
+	switch (CurrentStatus)
 	{
-
-		if (Tx_Buffer.Elements > 1){
-			/* Wait until Serial Tx Endpoint Ready for Read/Write */
-			while (!(Endpoint_ReadWriteAllowed()));
-			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
-				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
-				uint8_t val = Buffer_GetElement(&Tx_Buffer);
-				SendMIDICC(addr, val, 0, 0);
-			}
-			/*
-			while ((Tx_Buffer.Elements > 1) && (Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE)){
-				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
-				uint8_t val = Buffer_GetElement(&Tx_Buffer);
-				SendMIDICC(addr, val, 0, 0);
-			}
-			*/
-		}
+		case Status_USBNotReady:
+			break;
+		case Status_USBEnumerating:
+			break;
+		case Status_USBReady:
+			//Turn on the LED when we are ready
+			PORTD &= ~_BV(PORTD6);
+			break;
 	}
-
-	/* Select the MIDI OUT stream */
-	Endpoint_SelectEndpoint(MIDI_STREAM_OUT_EPNUM);
-
-	/* Check if endpoint is ready to be read from, if so discard its (unused) data */
-	if (Endpoint_ReadWriteAllowed())
-	  Endpoint_ClearCurrentBank();
 }
 
 /** Sends a MIDI note change event (note on or off) to the MIDI output jack, on the given virtual cable ID and channel.
@@ -390,7 +411,7 @@ TASK(USB_MIDI_Task)
 void SendMIDINoteChange(const uint8_t Pitch, const bool OnOff, const uint8_t CableID, const uint8_t Channel)
 {
 	/* Wait until endpoint ready for more data */
-	while (!(Endpoint_ReadWriteAllowed()));
+	while (!(Endpoint_IsReadWriteAllowed()));
 
 	/* Check if the message should be a Note On or Note Off command */
 	uint8_t Command = ((OnOff)? MIDI_COMMAND_NOTE_ON : MIDI_COMMAND_NOTE_OFF);
@@ -404,13 +425,13 @@ void SendMIDINoteChange(const uint8_t Pitch, const bool OnOff, const uint8_t Cab
 	Endpoint_Write_Byte(MIDI_STANDARD_VELOCITY);
 	
 	/* Send the data in the endpoint to the host */
-	Endpoint_ClearCurrentBank();
+	Endpoint_ClearIN();
 }
 
 void SendMIDICC(const uint8_t num, const uint8_t val, const uint8_t CableID, const uint8_t Channel)
 {
 	/* Wait until endpoint ready for more data */
-	while (!(Endpoint_ReadWriteAllowed()));
+	while (!(Endpoint_IsReadWriteAllowed()));
 
 	/* Check if the message should be a Note On or Note Off command */
 	uint8_t Command = MIDI_COMMAND_CC;
@@ -423,5 +444,5 @@ void SendMIDICC(const uint8_t num, const uint8_t val, const uint8_t CableID, con
 	Endpoint_Write_Byte(val);
 	
 	/* Send the data in the endpoint to the host */
-	Endpoint_ClearCurrentBank();
+	Endpoint_ClearIN();
 }

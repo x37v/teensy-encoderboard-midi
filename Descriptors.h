@@ -1,13 +1,13 @@
 /*
              LUFA Library
-     Copyright (C) Dean Camera, 2008.
+     Copyright (C) Dean Camera, 2009.
               
   dean [at] fourwalledcubicle [dot] com
       www.fourwalledcubicle.com
 */
 
 /*
-  Copyright 2008  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+  Copyright 2009  Dean Camera (dean [at] fourwalledcubicle [dot] com)
 
   Permission to use, copy, modify, and distribute this software
   and its documentation for any purpose and without fee is hereby
@@ -117,7 +117,7 @@
 		} USB_AudioStreamEndpoint_Std_t;
 
 		/** Type define for an Audio class specific MIDI IN jack. This gives information to the host on a MIDI input, either
-		 *  a physical input jack, or a logical jack (recieving input data internally, or from the host via an endpoint).
+		 *  a physical input jack, or a logical jack (receiving input data internally, or from the host via an endpoint).
 		 */
 		typedef struct
 		{
