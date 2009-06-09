@@ -286,21 +286,25 @@ TASK(SHIFT_REG_Task)
 			if(consistent){
 				uint8_t last_state = (encoder_last[bank + board * 2] >> shift) & 0x3;
 				if(state != last_state){
-					switch(decode(state, last_state)){
-						case 1:
-							//addr
-							Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
-							//value
-							Buffer_StoreElement(&Tx_Buffer, 65);
-							break;
-						case -1:
-							//addr
-							Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
-							//value
-							Buffer_StoreElement(&Tx_Buffer, 63);
-							break;
-						default:
-							break;
+					//XXX for now, only send when we are on a detent
+					//eventually we'll use a setting per encoder to determine if we do this or not
+					if(state == 0x0 || state == 0x3){
+						switch(decode(state, last_state)){
+							case 1:
+								//addr
+								Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
+								//value
+								Buffer_StoreElement(&Tx_Buffer, 65);
+								break;
+							case -1:
+								//addr
+								Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
+								//value
+								Buffer_StoreElement(&Tx_Buffer, 63);
+								break;
+							default:
+								break;
+						}
 					}
 
 					//store the new state data
