@@ -62,6 +62,8 @@ volatile uint8_t history = 0;
 volatile uint8_t encoder_last[2 * NUMBOARDS];
 volatile uint8_t button_last[2 * NUMBOARDS];
 
+volatile button_t button_settings[4 * NUMBOARDS];
+
 void tick_clock(void){
 	PORTD &= ~_BV(PORTD1);
 	PORTD |= _BV(PORTD1);
@@ -158,6 +160,11 @@ int main(void)
 	for(i = 0; i < (2 * NUMBOARDS); i++)
 		encoder_last[i] = button_last[i] = 0xFF;
 
+	for(i = 0; i < 4 * NUMBOARDS; i++){
+		button_settings[i].chan = i;
+		button_settings[i].num = i + BTN_CC_OFFSET;
+	}
+
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
 
@@ -228,13 +235,14 @@ TASK(USB_MIDI_Task)
 	/* Check if endpoint is ready to be written to */
 	if (Endpoint_IsINReady())
 	{
-		if (Tx_Buffer.Elements > 1){
+		if (Tx_Buffer.Elements > 2){
 			/* Wait until Serial Tx Endpoint Ready for Read/Write */
 			while (!(Endpoint_IsINReady()));
 			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
+				uint8_t chan = Buffer_GetElement(&Tx_Buffer);
 				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
 				uint8_t val = Buffer_GetElement(&Tx_Buffer);
-				SendMIDICC(addr, val, 0, 0);
+				SendMIDICC(addr, val, 0, chan);
 			}
 		}
 	}
@@ -289,6 +297,7 @@ TASK(SHIFT_REG_Task)
 					//XXX for now, only send when we are on a detent
 					//eventually we'll use a setting per encoder to determine if we do this or not
 					if(state == 0x0 || state == 0x3){
+						Buffer_StoreElement(&Tx_Buffer, 0);
 						switch(decode(state, last_state)){
 							case 1:
 								//addr
@@ -332,6 +341,7 @@ TASK(SHIFT_REG_Task)
 				if((button_last[board * 2] & mask) != (button_hist[board * 2][0] & mask)){
 
 					//send the CC index
+					Buffer_StoreElement(&Tx_Buffer, 0);
 					Buffer_StoreElement(&Tx_Buffer, cc_num(ENC_BTN, i, board));
 
 					//send the CC value
@@ -362,8 +372,9 @@ TASK(SHIFT_REG_Task)
 				//has the state changed?
 				if((button_last[1 + board * 2] & mask) != (button_hist[1 + board * 2][0] & mask)){
 
-					//send the CC index
-					Buffer_StoreElement(&Tx_Buffer, cc_num(BTN, i, board));
+					//send the channel and CC index
+					Buffer_StoreElement(&Tx_Buffer, button_settings[i + board * 4].chan);
+					Buffer_StoreElement(&Tx_Buffer, button_settings[i + board * 4].num);
 
 					//send the CC value
 					if(up)
