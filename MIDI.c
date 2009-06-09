@@ -38,6 +38,7 @@
 #include "MIDI.h"
 #include "RingBuff.h"
 #include <util/delay.h>
+#include <avr/eeprom.h>
 
 /* Scheduler Task List */
 TASK_LIST
@@ -62,7 +63,9 @@ volatile uint8_t history = 0;
 volatile uint8_t encoder_last[2 * NUMBOARDS];
 volatile uint8_t button_last[2 * NUMBOARDS];
 
-volatile button_t button_settings[4 * NUMBOARDS];
+//eeprom stuff
+button_t EEMEM button_settings[4 * NUMBOARDS];
+encoder_t EEMEM encoder_settings[8 * NUMBOARDS];
 
 void tick_clock(void){
 	PORTD &= ~_BV(PORTD1);
@@ -161,9 +164,15 @@ int main(void)
 		encoder_last[i] = button_last[i] = 0xFF;
 
 	for(i = 0; i < 4 * NUMBOARDS; i++){
-		button_settings[i].chan = i;
-		button_settings[i].num = i + BTN_CC_OFFSET;
+		button_t setting;
+		setting.chan = i;
+		setting.num = i;
+
+		eeprom_busy_wait();
+		//XXX the src + dst changes.. i'm using libc 1.6.2
+		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
 	}
+
 
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
@@ -240,9 +249,14 @@ TASK(USB_MIDI_Task)
 			while (!(Endpoint_IsINReady()));
 			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
 				uint8_t chan = Buffer_GetElement(&Tx_Buffer);
+				//the channel always has the top bit set.. 
+				//this way we make sure to line up data if data is dropped
+				//XXX could lead to lockup, need a better way
+				while(!(chan & 0x80))
+					chan = Buffer_GetElement(&Tx_Buffer);
 				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
 				uint8_t val = Buffer_GetElement(&Tx_Buffer);
-				SendMIDICC(addr, val, 0, chan);
+				SendMIDICC(addr & 0x7F, val & 0x7F, 0, chan & 0x0F);
 			}
 		}
 	}
@@ -294,10 +308,13 @@ TASK(SHIFT_REG_Task)
 			if(consistent){
 				uint8_t last_state = (encoder_last[bank + board * 2] >> shift) & 0x3;
 				if(state != last_state){
-					//XXX for now, only send when we are on a detent
-					//eventually we'll use a setting per encoder to determine if we do this or not
-					if(state == 0x0 || state == 0x3){
-						Buffer_StoreElement(&Tx_Buffer, 0);
+					//send data only if:
+					//we are not excluding non detent data
+					//OR [it is implied we are only sending detent data], we are on a detent
+					if(//(encoder_settings[i + board * 8].flags & ENC_DETENT_ONLY) ||
+							((state == 0x0) || (state == 0x3))){
+
+						Buffer_StoreElement(&Tx_Buffer, 0x80);
 						switch(decode(state, last_state)){
 							case 1:
 								//addr
@@ -314,6 +331,7 @@ TASK(SHIFT_REG_Task)
 							default:
 								break;
 						}
+
 					}
 
 					//store the new state data
@@ -341,7 +359,7 @@ TASK(SHIFT_REG_Task)
 				if((button_last[board * 2] & mask) != (button_hist[board * 2][0] & mask)){
 
 					//send the CC index
-					Buffer_StoreElement(&Tx_Buffer, 0);
+					Buffer_StoreElement(&Tx_Buffer, 0x80);
 					Buffer_StoreElement(&Tx_Buffer, cc_num(ENC_BTN, i, board));
 
 					//send the CC value
@@ -371,10 +389,14 @@ TASK(SHIFT_REG_Task)
 			if(consistent){
 				//has the state changed?
 				if((button_last[1 + board * 2] & mask) != (button_hist[1 + board * 2][0] & mask)){
+					button_t setting;
+					eeprom_busy_wait();
+					//eeprom_read_block((void *)&setting, (const void *)((i + board * 4) * sizeof(button_t)), sizeof(button_t));
+					eeprom_read_block((void *)&setting, (void *)(&button_settings[i + board * 4]), sizeof(button_t));
 
 					//send the channel and CC index
-					Buffer_StoreElement(&Tx_Buffer, button_settings[i + board * 4].chan);
-					Buffer_StoreElement(&Tx_Buffer, button_settings[i + board * 4].num);
+					Buffer_StoreElement(&Tx_Buffer, 0x80 | setting.chan);
+					Buffer_StoreElement(&Tx_Buffer, setting.num);
 
 					//send the CC value
 					if(up)

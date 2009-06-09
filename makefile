@@ -61,7 +61,8 @@
 
 # MCU name
 #MCU = at90usb1287
-MCU = at90usb162
+#MCU = at90usb162
+MCU = at90usb646
 
 
 # Target board (see library "Board Types" documentation, USER or blank for projects not requiring
@@ -537,7 +538,7 @@ gccversion :
 #	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
 
 program: $(TARGET).hex
-	@teensy_loader_cli -w -v $(TARGET).hex
+	@teensy_loader_cli -p -w -v $(TARGET).hex
 
 
 flip: $(TARGET).hex

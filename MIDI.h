@@ -55,6 +55,31 @@ typedef struct {
 	uint8_t num;
 } button_t;
 
+//these are settings for the encoders
+//if set then we send absolute not relative values [and keep a count]
+#define ENC_ABSOLUTE 0x1
+//if set then we only send data when we are at a detent
+#define ENC_DETENT_ONLY 0x2
+//if set then the button acts as a multiplier not its own cc
+#define ENC_BUTTON_MUL 0x10
+
+typedef struct {
+	//settings
+	uint8_t flags;
+
+	//which midi channel and which cc number
+	uint8_t chan;
+	uint8_t num;
+	//only used if absolute is true
+	uint8_t val;
+	
+	//button settings
+	//data0 == channel or down state
+	uint8_t btn_data0;
+	//data1 == cc number or multiplier
+	uint8_t btn_data1;
+} encoder_t;
+
 /* Macros: */
 /** MIDI command for a note on (activation) event */
 #define MIDI_COMMAND_NOTE_ON         0x90
