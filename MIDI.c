@@ -1,33 +1,33 @@
 /*
  * Modified by Alex Norman 6/3/2009 to work with the Encoder Board
-             LUFA Library
-     Copyright (C) Dean Camera, 2009.
-              
-  dean [at] fourwalledcubicle [dot] com
-      www.fourwalledcubicle.com
-*/
+ LUFA Library
+ Copyright (C) Dean Camera, 2009.
+
+ dean [at] fourwalledcubicle [dot] com
+ www.fourwalledcubicle.com
+ */
 
 /*
-  Copyright 2009  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+	Copyright 2009  Dean Camera (dean [at] fourwalledcubicle [dot] com)
 
-  Permission to use, copy, modify, and distribute this software
-  and its documentation for any purpose and without fee is hereby
-  granted, provided that the above copyright notice appear in all
-  copies and that both that the copyright notice and this
-  permission notice and warranty disclaimer appear in supporting
-  documentation, and that the name of the author not be used in
-  advertising or publicity pertaining to distribution of the
-  software without specific, written prior permission.
+	Permission to use, copy, modify, and distribute this software
+	and its documentation for any purpose and without fee is hereby
+	granted, provided that the above copyright notice appear in all
+	copies and that both that the copyright notice and this
+	permission notice and warranty disclaimer appear in supporting
+	documentation, and that the name of the author not be used in
+	advertising or publicity pertaining to distribution of the
+	software without specific, written prior permission.
 
-  The author disclaim all warranties with regard to this
-  software, including all implied warranties of merchantability
-  and fitness.  In no event shall the author be liable for any
-  special, indirect or consequential damages or any damages
-  whatsoever resulting from loss of use, data or profits, whether
-  in an action of contract, negligence or other tortious action,
-  arising out of or in connection with the use or performance of
-  this software.
-*/
+	The author disclaim all warranties with regard to this
+	software, including all implied warranties of merchantability
+	and fitness.  In no event shall the author be liable for any
+	special, indirect or consequential damages or any damages
+	whatsoever resulting from loss of use, data or profits, whether
+	in an action of contract, negligence or other tortious action,
+	arising out of or in connection with the use or performance of
+	this software.
+	*/
 
 /** \file
  *
@@ -43,8 +43,8 @@
 TASK_LIST
 {
 	{ .Task = USB_USBTask          , .TaskStatus = TASK_STOP },
-	{ .Task = USB_MIDI_Task        , .TaskStatus = TASK_STOP },
-	{ .Task = SHIFT_REG_Task        , .TaskStatus = TASK_STOP },
+		{ .Task = USB_MIDI_Task        , .TaskStatus = TASK_STOP },
+		{ .Task = SHIFT_REG_Task        , .TaskStatus = TASK_STOP },
 };
 
 //hold the data to send
@@ -157,10 +157,10 @@ int main(void)
 	//initially everything is 'up'
 	for(i = 0; i < (2 * NUMBOARDS); i++)
 		encoder_last[i] = button_last[i] = 0xFF;
-	
+
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
-	
+
 	/* Initialize Scheduler so that it can be used */
 	Scheduler_Init();
 
@@ -202,12 +202,12 @@ EVENT_HANDLER(USB_ConfigurationChanged)
 {
 	/* Setup MIDI stream endpoints */
 	Endpoint_ConfigureEndpoint(MIDI_STREAM_OUT_EPNUM, EP_TYPE_BULK,
-		                       ENDPOINT_DIR_OUT, MIDI_STREAM_EPSIZE,
-	                           ENDPOINT_BANK_SINGLE);
+			ENDPOINT_DIR_OUT, MIDI_STREAM_EPSIZE,
+			ENDPOINT_BANK_SINGLE);
 
 	Endpoint_ConfigureEndpoint(MIDI_STREAM_IN_EPNUM, EP_TYPE_BULK,
-		                       ENDPOINT_DIR_IN, MIDI_STREAM_EPSIZE,
-	                           ENDPOINT_BANK_SINGLE);
+			ENDPOINT_DIR_IN, MIDI_STREAM_EPSIZE,
+			ENDPOINT_BANK_SINGLE);
 
 	/* Indicate USB connected and ready */
 	UpdateStatus(Status_USBReady);
@@ -244,7 +244,7 @@ TASK(USB_MIDI_Task)
 
 	/* Check if endpoint is ready to be read from, if so discard its (unused) data */
 	if (Endpoint_IsOUTReceived())
-	  Endpoint_ClearOUT();
+		Endpoint_ClearOUT();
 }
 
 TASK(SHIFT_REG_Task)
@@ -391,7 +391,7 @@ void UpdateStatus(uint8_t CurrentStatus)
 {
 	//by default turn off the LED
 	PORTD |= _BV(PORTD6);
-	
+
 	switch (CurrentStatus)
 	{
 		case Status_USBNotReady:
@@ -427,7 +427,7 @@ void SendMIDINoteChange(const uint8_t Pitch, const bool OnOff, const uint8_t Cab
 	Endpoint_Write_Byte(Command | Channel);
 	Endpoint_Write_Byte(Pitch);
 	Endpoint_Write_Byte(MIDI_STANDARD_VELOCITY);
-	
+
 	/* Send the data in the endpoint to the host */
 	Endpoint_ClearIN();
 }
@@ -446,7 +446,7 @@ void SendMIDICC(const uint8_t num, const uint8_t val, const uint8_t CableID, con
 	Endpoint_Write_Byte(Command | Channel);
 	Endpoint_Write_Byte(num);
 	Endpoint_Write_Byte(val);
-	
+
 	/* Send the data in the endpoint to the host */
 	Endpoint_ClearIN();
 }

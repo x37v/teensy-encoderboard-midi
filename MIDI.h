@@ -32,69 +32,76 @@
  *
  *  Header file for AudioOutput.c.
  */
- 
+
 #ifndef _AUDIO_OUTPUT_H_
 #define _AUDIO_OUTPUT_H_
 
-	/* Includes: */
-		#include <avr/io.h>
-		#include <avr/wdt.h>
-		#include <avr/power.h>
-		#include <stdbool.h>
+/* Includes: */
+#include <avr/io.h>
+#include <avr/wdt.h>
+#include <avr/power.h>
+#include <stdbool.h>
 
-		#include "Descriptors.h"
-				
-		#include <LUFA/Version.h>                            // Library Version Information
-		#include <LUFA/Drivers/USB/USB.h>                    // USB Functionality
-		#include <LUFA/Scheduler/Scheduler.h>                // Simple scheduler for task management
+#include "Descriptors.h"
 
-   /* Macros: */
-		/** MIDI command for a note on (activation) event */
-		#define MIDI_COMMAND_NOTE_ON         0x90
+#include <LUFA/Version.h>                            // Library Version Information
+#include <LUFA/Drivers/USB/USB.h>                    // USB Functionality
+#include <LUFA/Scheduler/Scheduler.h>                // Simple scheduler for task management
 
-		/** MIDI command for a note off (deactivation) event */
-		#define MIDI_COMMAND_NOTE_OFF        0x80
 
-		#define MIDI_COMMAND_CC         0xB0
+typedef struct {
+	//which midi channel and which cc number
+	uint8_t chan;
+	uint8_t num;
+} button_t;
 
-		/** Standard key press velocity value used for all note events, as no pressure sensor is mounted */
-		#define MIDI_STANDARD_VELOCITY       64
-		
-		/** Convenience macro. MIDI channels are numbered from 1-10 (natural numbers) however the logical channel
-		 *  addresses are zero-indexed. This converts a natural MIDI channel number into the logical channel address.
-		 *
-		 *  \param channel  MIDI channel number to address
-		 */
-		#define MIDI_CHANNEL(channel)        (channel - 1)
+/* Macros: */
+/** MIDI command for a note on (activation) event */
+#define MIDI_COMMAND_NOTE_ON         0x90
 
-	/* Enums: */
-		/** Enum for the possible status codes for passing to the UpdateStatus() function. */
-		enum MIDI_StatusCodes_t
-		{
-			Status_USBNotReady    = 0, /**< USB is not ready (disconnected from a USB host) */
-			Status_USBEnumerating = 1, /**< USB interface is enumerating */
-			Status_USBReady       = 2, /**< USB interface is connected and ready */
-		};
+/** MIDI command for a note off (deactivation) event */
+#define MIDI_COMMAND_NOTE_OFF        0x80
 
-	/* Task Definitions: */
-		TASK(USB_MIDI_Task);
-		TASK(SHIFT_REG_Task);
+#define MIDI_COMMAND_CC         0xB0
 
-	/* Event Handlers: */
-		/** Indicates that this module will catch the USB_Connect event when thrown by the library. */
-		HANDLES_EVENT(USB_Connect);
+/** Standard key press velocity value used for all note events, as no pressure sensor is mounted */
+#define MIDI_STANDARD_VELOCITY       64
 
-		/** Indicates that this module will catch the USB_Disconnect event when thrown by the library. */
-		HANDLES_EVENT(USB_Disconnect);
+/** Convenience macro. MIDI channels are numbered from 1-10 (natural numbers) however the logical channel
+ *  addresses are zero-indexed. This converts a natural MIDI channel number into the logical channel address.
+ *
+ *  \param channel  MIDI channel number to address
+ */
+#define MIDI_CHANNEL(channel)        (channel - 1)
 
-		/** Indicates that this module will catch the USB_ConfigurationChanged event when thrown by the library. */
-		HANDLES_EVENT(USB_ConfigurationChanged);
+/* Enums: */
+/** Enum for the possible status codes for passing to the UpdateStatus() function. */
+enum MIDI_StatusCodes_t
+{
+	Status_USBNotReady    = 0, /**< USB is not ready (disconnected from a USB host) */
+	Status_USBEnumerating = 1, /**< USB interface is enumerating */
+	Status_USBReady       = 2, /**< USB interface is connected and ready */
+};
 
-   /* Function Prototypes: */
-		void SendMIDINoteChange(const uint8_t Pitch, const bool OnOff,
-		                        const uint8_t CableID, const uint8_t Channel);		
-		void SendMIDICC(const uint8_t num, const uint8_t val, 
-				const uint8_t CableID, const uint8_t Channel);
-		void UpdateStatus(uint8_t CurrentStatus);
-		
+/* Task Definitions: */
+TASK(USB_MIDI_Task);
+TASK(SHIFT_REG_Task);
+
+/* Event Handlers: */
+/** Indicates that this module will catch the USB_Connect event when thrown by the library. */
+HANDLES_EVENT(USB_Connect);
+
+/** Indicates that this module will catch the USB_Disconnect event when thrown by the library. */
+HANDLES_EVENT(USB_Disconnect);
+
+/** Indicates that this module will catch the USB_ConfigurationChanged event when thrown by the library. */
+HANDLES_EVENT(USB_ConfigurationChanged);
+
+/* Function Prototypes: */
+void SendMIDINoteChange(const uint8_t Pitch, const bool OnOff,
+		const uint8_t CableID, const uint8_t Channel);		
+void SendMIDICC(const uint8_t num, const uint8_t val, 
+		const uint8_t CableID, const uint8_t Channel);
+void UpdateStatus(uint8_t CurrentStatus);
+
 #endif
