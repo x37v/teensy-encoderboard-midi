@@ -65,6 +65,7 @@ volatile uint8_t button_last[2 * NUMBOARDS];
 
 //flags to indicate that a button is down
 volatile uint8_t enc_btn_down[NUMBOARDS];
+volatile uint8_t enc_value[8 * NUMBOARDS];
 
 //eeprom stuff
 button_t EEMEM button_settings[4 * NUMBOARDS];
@@ -156,21 +157,21 @@ int main(void)
 		setting.flags = ENC_DETENT_ONLY;
 		setting.chan = 0;
 		setting.num = i;
-		setting.val = 0;
 
 		setting.btn.chan = 0;
 		setting.btn.num = i + ENC_BTN_CC_OFFSET;
 		
 		//the multiplier
-		/*
-		setting.flags = ENC_DETENT_ONLY | ENC_BUTTON_MUL;
-		setting.btn.num = 4;
-		*/
+		setting.flags |= ENC_BUTTON_MUL;
+		setting.btn.num = 8;
 
 		//write to eeprom
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(encoder_settings[i])), (void *)&setting, sizeof(encoder_t));
+
+		//set the initial value for the encoder [absolute]
+		enc_value[i] = 0;
 	}
 
 	for(i = 0; i < 4 * NUMBOARDS; i++){
@@ -328,8 +329,8 @@ TASK(SHIFT_REG_Task)
 					//OR [it is implied we are only sending detent data], we are on a detent
 					if(!(flags & ENC_DETENT_ONLY) ||
 							((state == 0x0) || (state == 0x3))){
-						int8_t enc_value = decode(state, last_state);
-						if(enc_value != 0){
+						int8_t enc_offset = decode(state, last_state);
+						if(enc_offset != 0){
 							eeprom_busy_wait();
 							uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].chan));
 							eeprom_busy_wait();
@@ -342,15 +343,34 @@ TASK(SHIFT_REG_Task)
 								eeprom_busy_wait();
 								mul = eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
 								if(enc_btn_down[board] & (1 << i))
-									enc_value *= mul;
+									enc_offset *= mul;
 							}
 
 							//are we doing absolute values?
 							if(flags & ENC_ABSOLUTE){
+								uint8_t out_value;
+								uint8_t last_value = enc_value[index];
+								//make sure to stay in range
+								if(enc_offset + (int8_t)last_value < 0)
+									out_value = 0;
+								else if (last_value + enc_offset > 127)
+									out_value = 127;
+								else
+									out_value = last_value + enc_offset;
+
+								//only send/store if we have a new value
+								if(out_value != last_value){
+									Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
+									Buffer_StoreElement(&Tx_Buffer, num);
+									Buffer_StoreElement(&Tx_Buffer, out_value);
+									//store this value
+									enc_value[index] = out_value;
+								}
+
 							} else {
 								Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
 								Buffer_StoreElement(&Tx_Buffer, num);
-								Buffer_StoreElement(&Tx_Buffer, 64 + enc_value);
+								Buffer_StoreElement(&Tx_Buffer, 64 + enc_offset);
 							}
 						}
 

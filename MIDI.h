@@ -70,8 +70,7 @@ typedef struct {
 	//which midi channel and which cc number
 	uint8_t chan;
 	uint8_t num;
-	//only used if absolute is true
-	uint8_t val;
+
 	//button
 	button_t btn;
 } encoder_t;
