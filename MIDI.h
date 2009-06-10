@@ -59,8 +59,8 @@ typedef struct {
 //ENC_BUTTON_MUL flag is set
 typedef struct {
 	//mul
-	uint8_t state;
-	uint8_t mul;
+	uint8_t down;
+	uint8_t value;
 } button_mul_t;
 
 //these are settings for the encoders

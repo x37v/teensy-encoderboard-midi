@@ -198,7 +198,6 @@ int main(void)
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
 	}
 
-
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
 
@@ -342,27 +341,20 @@ TASK(SHIFT_REG_Task)
 					//OR [it is implied we are only sending detent data], we are on a detent
 					if(!(flags & ENC_DETENT_ONLY) ||
 							((state == 0x0) || (state == 0x3))){
-						eeprom_busy_wait();
-						uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].chan));
-						eeprom_busy_wait();
-						uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].num));
+						int8_t enc_value = decode(state, last_state);
+						if(enc_value != 0){
+							eeprom_busy_wait();
+							uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].chan));
+							eeprom_busy_wait();
+							uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].num));
 
-						Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
-						switch(decode(state, last_state)){
-							case 1:
-								//addr
+							//are we doing absolute values?
+							if(flags & ENC_ABSOLUTE){
+							} else {
+								Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
 								Buffer_StoreElement(&Tx_Buffer, num);
-								//value
-								Buffer_StoreElement(&Tx_Buffer, 65);
-								break;
-							case -1:
-								//addr
-								Buffer_StoreElement(&Tx_Buffer, num);
-								//value
-								Buffer_StoreElement(&Tx_Buffer, 63);
-								break;
-							default:
-								break;
+								Buffer_StoreElement(&Tx_Buffer, 64 + enc_value);
+							}
 						}
 
 					}
