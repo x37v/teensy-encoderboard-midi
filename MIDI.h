@@ -50,18 +50,10 @@
 
 
 typedef struct {
-	//which midi channel and which cc number
+	//which midi channel and which cc number (or multiplier)
 	uint8_t chan;
 	uint8_t num;
 } button_t;
-
-//has exactly the same structure as button_t so we can cast a button_t if the
-//ENC_BUTTON_MUL flag is set
-typedef struct {
-	//mul
-	uint8_t down;
-	uint8_t value;
-} button_mul_t;
 
 //these are settings for the encoders
 //if set then we send absolute not relative values [and keep a count]

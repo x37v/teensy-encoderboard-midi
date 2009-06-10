@@ -63,6 +63,9 @@ volatile uint8_t history = 0;
 volatile uint8_t encoder_last[2 * NUMBOARDS];
 volatile uint8_t button_last[2 * NUMBOARDS];
 
+//flags to indicate that a button is down
+volatile uint8_t enc_btn_down[NUMBOARDS];
+
 //eeprom stuff
 button_t EEMEM button_settings[4 * NUMBOARDS];
 encoder_t EEMEM encoder_settings[8 * NUMBOARDS];
@@ -79,35 +82,11 @@ void latch_data(void){
 	PORTD |= _BV(PORTD4);
 }
 
-typedef enum {ENC, ENC_BTN, BTN} controller_t;
-
 uint8_t enc_index(uint8_t index, uint8_t board){
 	if (index & 0x1)
 		return ((NUMBOARDS + board) << 2) + (index >> 1);
 	else
 		return (index >> 1) + board * 4;
-}
-
-uint8_t cc_num(controller_t t, uint8_t index, uint8_t board){
-	switch(t){
-		case ENC:
-			//remap
-			//odd indicies are 2nd row.
-			if (index & 0x1)
-				return ((NUMBOARDS + board) << 2) + (index >> 1);
-			else
-				return (index >> 1) + board * 4;
-		case ENC_BTN:
-			if (index & 0x1)
-				return ((NUMBOARDS + board) << 2) + (index >> 1) + ENC_BTN_CC_OFFSET;
-			else
-				return (index >> 1) + (board << 2) + ENC_BTN_CC_OFFSET;
-		case BTN:
-			return index + (board << 2) + BTN_CC_OFFSET;
-		default:
-			break;
-	}
-	return 127;
 }
 
 int8_t decode(uint8_t enc_current, uint8_t enc_last){
@@ -170,6 +149,10 @@ int main(void)
 	for(i = 0; i < (2 * NUMBOARDS); i++)
 		encoder_last[i] = button_last[i] = 0xFF;
 
+	//initially all the encoder buttons are up
+	for(i = 0; i < NUMBOARDS; i++)
+		enc_btn_down[i] = 0;
+
 	for(i = 0; i < 8 * NUMBOARDS; i++){
 		encoder_t setting;
 		//set the settings
@@ -180,6 +163,12 @@ int main(void)
 
 		setting.btn.chan = 0;
 		setting.btn.num = i + ENC_BTN_CC_OFFSET;
+		
+		//the multiplier
+		/*
+		setting.flags = ENC_DETENT_ONLY | ENC_BUTTON_MUL;
+		setting.btn.num = 4;
+		*/
 
 		//write to eeprom
 		eeprom_busy_wait();
@@ -348,6 +337,16 @@ TASK(SHIFT_REG_Task)
 							eeprom_busy_wait();
 							uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].num));
 
+							//if the button is doing multiplying, do that
+							if(flags & ENC_BUTTON_MUL){
+								uint8_t mul;
+								//get the multiplier
+								eeprom_busy_wait();
+								mul = eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
+								if(enc_btn_down[board] & (1 << i))
+									enc_value *= mul;
+							}
+
 							//are we doing absolute values?
 							if(flags & ENC_ABSOLUTE){
 							} else {
@@ -380,18 +379,35 @@ TASK(SHIFT_REG_Task)
 			}
 
 			if(consistent){
+				uint8_t index = enc_index(i, board);
+				eeprom_busy_wait();
+				uint8_t flags = eeprom_read_byte((void *)&(encoder_settings[index].flags));
 				//has the state changed?
 				if((button_last[board * 2] & mask) != (button_hist[board * 2][0] & mask)){
 
-					//send the CC index
-					Buffer_StoreElement(&Tx_Buffer, 0x80);
-					Buffer_StoreElement(&Tx_Buffer, cc_num(ENC_BTN, i, board));
-
-					//send the CC value
+					//set the down state
 					if(up)
-						Buffer_StoreElement(&Tx_Buffer, 0);
+						enc_btn_down[board] &= ~(1 << i);
 					else
-						Buffer_StoreElement(&Tx_Buffer, 127);
+						enc_btn_down[board] |= (1 << i);
+
+					//if we're doing a mul then we just set the down state
+					if(!(flags & ENC_BUTTON_MUL)){
+
+						//get the cc num
+						eeprom_busy_wait();
+						uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
+
+						//send the CC index
+						Buffer_StoreElement(&Tx_Buffer, 0x80);
+						Buffer_StoreElement(&Tx_Buffer, num);
+
+						//send the CC value
+						if(up)
+							Buffer_StoreElement(&Tx_Buffer, 0);
+						else
+							Buffer_StoreElement(&Tx_Buffer, 127);
+					}
 
 					//store the new state
 					button_last[board * 2] = (button_last[board * 2] & ~mask) | (button_hist[board * 2][0] & mask);
