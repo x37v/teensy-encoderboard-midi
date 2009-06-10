@@ -55,6 +55,14 @@ typedef struct {
 	uint8_t num;
 } button_t;
 
+//has exactly the same structure as button_t so we can cast a button_t if the
+//ENC_BUTTON_MUL flag is set
+typedef struct {
+	//mul
+	uint8_t state;
+	uint8_t mul;
+} button_mul_t;
+
 //these are settings for the encoders
 //if set then we send absolute not relative values [and keep a count]
 #define ENC_ABSOLUTE 0x1
@@ -72,12 +80,8 @@ typedef struct {
 	uint8_t num;
 	//only used if absolute is true
 	uint8_t val;
-	
-	//button settings
-	//data0 == channel or down state
-	uint8_t btn_data0;
-	//data1 == cc number or multiplier
-	uint8_t btn_data1;
+	//button
+	button_t btn;
 } encoder_t;
 
 /* Macros: */

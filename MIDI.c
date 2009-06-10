@@ -81,6 +81,13 @@ void latch_data(void){
 
 typedef enum {ENC, ENC_BTN, BTN} controller_t;
 
+uint8_t enc_index(uint8_t index, uint8_t board){
+	if (index & 0x1)
+		return ((NUMBOARDS + board) << 2) + (index >> 1);
+	else
+		return (index >> 1) + board * 4;
+}
+
 uint8_t cc_num(controller_t t, uint8_t index, uint8_t board){
 	switch(t){
 		case ENC:
@@ -163,11 +170,29 @@ int main(void)
 	for(i = 0; i < (2 * NUMBOARDS); i++)
 		encoder_last[i] = button_last[i] = 0xFF;
 
+	for(i = 0; i < 8 * NUMBOARDS; i++){
+		encoder_t setting;
+		//set the settings
+		setting.flags = ENC_DETENT_ONLY;
+		setting.chan = 0;
+		setting.num = i;
+		setting.val = 0;
+
+		setting.btn.chan = 0;
+		setting.btn.num = i + ENC_BTN_CC_OFFSET;
+
+		//write to eeprom
+		eeprom_busy_wait();
+		//XXX the src + dst changes.. i'm using libc 1.6.2
+		eeprom_write_block((void *)(&(encoder_settings[i])), (void *)&setting, sizeof(encoder_t));
+	}
+
 	for(i = 0; i < 4 * NUMBOARDS; i++){
 		button_t setting;
-		setting.chan = i;
-		setting.num = i;
+		setting.chan = 0;
+		setting.num = i + BTN_CC_OFFSET;
 
+		//write to eeprom
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
@@ -293,7 +318,6 @@ TASK(SHIFT_REG_Task)
 		}
 
 		//debounce buttons
-		//encoders
 		for(i = 0; i < 8; i++){
 			bool consistent = true;
 			uint8_t shift = (i * 2) % 8;
@@ -306,25 +330,34 @@ TASK(SHIFT_REG_Task)
 				}
 			}
 			if(consistent){
+				//we use a weird indexing scheme because we are cascading boards..
+				//calculate the index
+				uint8_t index = enc_index(i, board);
+				eeprom_busy_wait();
+				uint8_t flags = eeprom_read_byte((void *)&(encoder_settings[index].flags));
 				uint8_t last_state = (encoder_last[bank + board * 2] >> shift) & 0x3;
 				if(state != last_state){
 					//send data only if:
 					//we are not excluding non detent data
 					//OR [it is implied we are only sending detent data], we are on a detent
-					if(//(encoder_settings[i + board * 8].flags & ENC_DETENT_ONLY) ||
+					if(!(flags & ENC_DETENT_ONLY) ||
 							((state == 0x0) || (state == 0x3))){
+						eeprom_busy_wait();
+						uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].chan));
+						eeprom_busy_wait();
+						uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].num));
 
-						Buffer_StoreElement(&Tx_Buffer, 0x80);
+						Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
 						switch(decode(state, last_state)){
 							case 1:
 								//addr
-								Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
+								Buffer_StoreElement(&Tx_Buffer, num);
 								//value
 								Buffer_StoreElement(&Tx_Buffer, 65);
 								break;
 							case -1:
 								//addr
-								Buffer_StoreElement(&Tx_Buffer, cc_num(ENC, i, board));
+								Buffer_StoreElement(&Tx_Buffer, num);
 								//value
 								Buffer_StoreElement(&Tx_Buffer, 63);
 								break;
