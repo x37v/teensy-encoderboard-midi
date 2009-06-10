@@ -121,8 +121,7 @@ OBJDIR = .
 
 
 # Path to the LUFA library
-LUFA_PATH = ../../..
-
+LUFA_PATH = ../lufa_090510/
 
 # List C source files here. (C dependencies are automatically generated.)
 SRC = $(TARGET).c                                                 \
