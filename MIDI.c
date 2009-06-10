@@ -123,9 +123,6 @@ int8_t decode(uint8_t enc_current, uint8_t enc_last){
 	return 0;
 }
 
-/** Main program entry point. This routine configures the hardware required by the application, then
- *  starts the scheduler to run the application tasks.
- */
 int main(void)
 {
 	uint8_t i;
@@ -264,12 +261,13 @@ TASK(USB_MIDI_Task)
 				uint8_t chan = Buffer_GetElement(&Tx_Buffer);
 				//the channel always has the top bit set.. 
 				//this way we make sure to line up data if data is dropped
-				//XXX could lead to lockup, need a better way
-				while(!(chan & 0x80))
-					chan = Buffer_GetElement(&Tx_Buffer);
-				uint8_t addr = Buffer_GetElement(&Tx_Buffer);
-				uint8_t val = Buffer_GetElement(&Tx_Buffer);
-				SendMIDICC(addr & 0x7F, val & 0x7F, 0, chan & 0x0F);
+				//so if we don't have the top bit set, don't grab more data..
+				//we can catch up next time
+				if(chan & 0x80){
+					uint8_t addr = Buffer_GetElement(&Tx_Buffer);
+					uint8_t val = Buffer_GetElement(&Tx_Buffer);
+					SendMIDICC(addr & 0x7F, val & 0x7F, 0, chan & 0x0F);
+				}
 			}
 		}
 	}
