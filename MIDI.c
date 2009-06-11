@@ -49,12 +49,7 @@ TASK_LIST
 };
 
 //hold the data to send
-RingBuff_t Tx_Buffer;
-
-#define HISTORY 4
-#define NUMBOARDS 2
-#define ENC_BTN_CC_OFFSET 16
-#define BTN_CC_OFFSET 32
+RingBuff_t midiout_buf;
 
 volatile uint8_t encoder_hist[2 * NUMBOARDS][HISTORY];
 volatile uint8_t button_hist[2 * NUMBOARDS][HISTORY];
@@ -136,8 +131,8 @@ int main(void)
 	/* Disable clock division */
 	clock_prescale_set(clock_div_1);
 
-	//init ringbuffer
-	Buffer_Initialize(&Tx_Buffer);
+	//init ringbuffers
+	Buffer_Initialize(&midiout_buf);
 
 	//init ports [d6 is the LED]
 	DDRD |= _BV(PIND1) | _BV(PIND4) | _BV(PIND6);
@@ -255,18 +250,18 @@ TASK(USB_MIDI_Task)
 	/* Check if endpoint is ready to be written to */
 	if (Endpoint_IsINReady())
 	{
-		if (Tx_Buffer.Elements > 2){
+		if (midiout_buf.Elements > 2){
 			/* Wait until Serial Tx Endpoint Ready for Read/Write */
 			while (!(Endpoint_IsINReady()));
 			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
-				uint8_t chan = Buffer_GetElement(&Tx_Buffer);
+				uint8_t chan = Buffer_GetElement(&midiout_buf);
 				//the channel always has the top bit set.. 
 				//this way we make sure to line up data if data is dropped
 				//so if we don't have the top bit set, don't grab more data..
 				//we can catch up next time
 				if(chan & 0x80){
-					uint8_t addr = Buffer_GetElement(&Tx_Buffer);
-					uint8_t val = Buffer_GetElement(&Tx_Buffer);
+					uint8_t addr = Buffer_GetElement(&midiout_buf);
+					uint8_t val = Buffer_GetElement(&midiout_buf);
 					SendMIDICC(addr & 0x7F, val & 0x7F, 0, chan & 0x0F);
 				}
 			}
@@ -360,17 +355,17 @@ TASK(SHIFT_REG_Task)
 
 								//only send/store if we have a new value
 								if(out_value != last_value){
-									Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
-									Buffer_StoreElement(&Tx_Buffer, num);
-									Buffer_StoreElement(&Tx_Buffer, out_value);
+									Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+									Buffer_StoreElement(&midiout_buf, num);
+									Buffer_StoreElement(&midiout_buf, out_value);
 									//store this value
 									enc_value[index] = out_value;
 								}
 
 							} else {
-								Buffer_StoreElement(&Tx_Buffer, 0x80 | chan);
-								Buffer_StoreElement(&Tx_Buffer, num);
-								Buffer_StoreElement(&Tx_Buffer, 64 + enc_offset);
+								Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+								Buffer_StoreElement(&midiout_buf, num);
+								Buffer_StoreElement(&midiout_buf, 64 + enc_offset);
 							}
 						}
 
@@ -417,14 +412,14 @@ TASK(SHIFT_REG_Task)
 						uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
 
 						//send the CC index
-						Buffer_StoreElement(&Tx_Buffer, 0x80);
-						Buffer_StoreElement(&Tx_Buffer, num);
+						Buffer_StoreElement(&midiout_buf, 0x80);
+						Buffer_StoreElement(&midiout_buf, num);
 
 						//send the CC value
 						if(up)
-							Buffer_StoreElement(&Tx_Buffer, 0);
+							Buffer_StoreElement(&midiout_buf, 0);
 						else
-							Buffer_StoreElement(&Tx_Buffer, 127);
+							Buffer_StoreElement(&midiout_buf, 127);
 					}
 
 					//store the new state
@@ -454,14 +449,14 @@ TASK(SHIFT_REG_Task)
 					eeprom_read_block((void *)&setting, (void *)(&button_settings[i + board * 4]), sizeof(button_t));
 
 					//send the channel and CC index
-					Buffer_StoreElement(&Tx_Buffer, 0x80 | setting.chan);
-					Buffer_StoreElement(&Tx_Buffer, setting.num);
+					Buffer_StoreElement(&midiout_buf, 0x80 | setting.chan);
+					Buffer_StoreElement(&midiout_buf, setting.num);
 
 					//send the CC value
 					if(up)
-						Buffer_StoreElement(&Tx_Buffer, 0);
+						Buffer_StoreElement(&midiout_buf, 0);
 					else
-						Buffer_StoreElement(&Tx_Buffer, 127);
+						Buffer_StoreElement(&midiout_buf, 127);
 
 					//store the new state
 					button_last[1 + board * 2] = (button_last[1 + board * 2] & ~mask) | (button_hist[1 + board * 2][0] & mask);
@@ -541,4 +536,73 @@ void SendMIDICC(const uint8_t num, const uint8_t val, const uint8_t CableID, con
 
 	/* Send the data in the endpoint to the host */
 	Endpoint_ClearIN();
+}
+
+void SendSysex(const uint8_t * buf, const uint8_t len, const uint8_t CableID)
+{
+	if(len == 0)
+		return;
+	else if(len == 1){
+		/* Wait until endpoint ready for more data */
+		while (!(Endpoint_IsReadWriteAllowed()));
+		/* Write the Packet Header to the endpoint */
+		Endpoint_Write_Byte((CableID << 4) | 0x7);
+		Endpoint_Write_Byte(SYSEX_BEGIN);
+		Endpoint_Write_Byte(buf[0]);
+		Endpoint_Write_Byte(SYSEX_END);
+		/* Send the data in the endpoint to the host */
+		Endpoint_ClearIN();
+	} else {
+		uint8_t i;
+		//write the first packet
+		
+		// Wait until endpoint ready for more data
+		while (!(Endpoint_IsReadWriteAllowed()));
+		// Write the Packet Header to the endpoint
+		Endpoint_Write_Byte((CableID << 4) | 0x4);
+		Endpoint_Write_Byte(SYSEX_BEGIN);
+		Endpoint_Write_Byte(buf[0]);
+		Endpoint_Write_Byte(buf[1]);
+		// Send the data in the endpoint to the host
+		Endpoint_ClearIN();
+
+		//write intermediate bytes
+		for(i = 2; (i + 2) < len; i += 3){
+			// Wait until endpoint ready for more data
+			while (!(Endpoint_IsReadWriteAllowed()));
+			// Write the Packet Header to the endpoint
+			Endpoint_Write_Byte((CableID << 4) | 0x4);
+			Endpoint_Write_Byte(buf[i]);
+			Endpoint_Write_Byte(buf[i + 1]);
+			Endpoint_Write_Byte(buf[i + 2]);
+			// Send the data in the endpoint to the host
+			Endpoint_ClearIN();
+		}
+
+		// Wait until endpoint ready for more data
+		while (!(Endpoint_IsReadWriteAllowed()));
+		// Write the Packet Header to the endpoint
+		switch((len - 2) % 3){
+			case 0:
+				Endpoint_Write_Byte((CableID << 4) | 0x5);
+				Endpoint_Write_Byte(SYSEX_END);
+				Endpoint_Write_Byte(0);
+				Endpoint_Write_Byte(0);
+				break;
+			case 1:
+				Endpoint_Write_Byte((CableID << 4) | 0x6);
+				Endpoint_Write_Byte(buf[len - 1]);
+				Endpoint_Write_Byte(SYSEX_END);
+				Endpoint_Write_Byte(0);
+				break;
+			case 2:
+				Endpoint_Write_Byte((CableID << 4) | 0x7);
+				Endpoint_Write_Byte(buf[len - 2]);
+				Endpoint_Write_Byte(buf[len - 1]);
+				Endpoint_Write_Byte(SYSEX_END);
+				break;
+		}
+		// Send the data in the endpoint to the host
+		Endpoint_ClearIN();
+	}
 }
