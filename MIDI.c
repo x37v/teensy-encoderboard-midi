@@ -63,8 +63,13 @@ volatile uint8_t enc_btn_down[NUMBOARDS];
 volatile uint8_t enc_value[8 * NUMBOARDS];
 
 volatile bool send_ack;
+volatile bool send_version;
+volatile bool send_num_boards;
 volatile bool sysex_in;
 volatile uint8_t sysex_in_cnt;
+volatile sysex_t sysex_in_type;
+//this indexes an encoder or button based on the type set above
+volatile uint8_t sysex_setting_index;
 
 //eeprom stuff
 button_t EEMEM button_settings[4 * NUMBOARDS];
@@ -142,9 +147,11 @@ int main(void)
 	DDRD |= _BV(PIND1) | _BV(PIND4) | _BV(PIND6);
 	DDRD &= ~_BV(PIND0);
 
-	send_ack = false;
+	send_num_boards = send_version = send_ack = false;
 	sysex_in = false;
 	sysex_in_cnt = 0;
+	sysex_in_type = SYSEX_INVALID;
+	sysex_setting_index = 0;
 
 	//initially everything is 'up'
 	for(i = 0; i < (2 * NUMBOARDS); i++)
@@ -156,6 +163,16 @@ int main(void)
 
 	for(i = 0; i < 8 * NUMBOARDS; i++){
 		encoder_t setting;
+
+		//set the initial value for the encoder [absolute]
+		enc_value[i] = 0;
+
+		/*
+		//see if stuff is already set, test for CHAN == 0xFF
+		eeprom_busy_wait();
+		if(eeprom_read_byte((void *)&(encoder_settings[i].chan)) == 0xFF)
+			continue;
+
 		//set the settings
 		setting.flags = ENC_DETENT_ONLY;
 		setting.chan = 0;
@@ -172,13 +189,18 @@ int main(void)
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(encoder_settings[i])), (void *)&setting, sizeof(encoder_t));
-
-		//set the initial value for the encoder [absolute]
-		enc_value[i] = 0;
+		*/
 	}
 
 	for(i = 0; i < 4 * NUMBOARDS; i++){
 		button_t setting;
+
+		/*
+		//see if stuff is already set, test for CHAN == 0xFF
+		eeprom_busy_wait();
+		if(eeprom_read_byte((void *)&(button_settings[i].chan)) == 0xFF)
+			continue;
+
 		setting.chan = 0;
 		setting.num = i + BTN_CC_OFFSET;
 
@@ -186,6 +208,7 @@ int main(void)
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
+		*/
 	}
 
 	/* Indicate USB not ready */
@@ -262,6 +285,14 @@ TASK(USB_MIDI_Task)
 			send_ack = false;
 			while (!(Endpoint_IsINReady()));
 			SendSysex(sysex_ack, SYSEX_ACK_SIZE, 0);
+		} else if (send_num_boards){
+			send_num_boards = false;
+			while (!(Endpoint_IsINReady()));
+			SendSysex(sysex_boards, SYSEX_BOARD_CNT_SIZE, 0);
+		} else if(send_version){
+			send_version = false;
+			while (!(Endpoint_IsINReady()));
+			SendSysex(sysex_version, SYSEX_VERSION_SIZE, 0);
 		}
 		if (midiout_buf.Elements > 2){
 			/* Wait until Serial Tx Endpoint Ready for Read/Write */
@@ -311,6 +342,86 @@ TASK(USB_MIDI_Task)
 							sysex_in = false;
 					} else {
 						//here we have matched the header and we're parsing input data
+						uint8_t index = sysex_in_cnt - SYSEX_HEADER_SIZE;
+						//if the index is 0 then we're matching the type
+						if(index == 0){
+							if(byte == GET_VERSION){
+								send_version = true;
+								sysex_in = false;
+							} else if (byte == GET_NUM_BOARDS){
+								send_num_boards = true;
+								sysex_in = false;
+							} else if (byte < SYSEX_INVALID){
+								sysex_in_type = byte;
+							} else {
+								sysex_in_type = SYSEX_INVALID;
+								sysex_in = false;
+							}
+						} else {
+							//if we're setting encoder or buton data, and we're at index 1, set the button/encoder index
+							if(index == 1 && (sysex_in_type == SET_ENCODER_DATA || sysex_in_type == SET_BUTTON_DATA)){
+								sysex_setting_index = byte;
+							} else if(sysex_in_type == SET_ENCODER_DATA && index > 1){
+								//make sure we're in range
+								if(sysex_setting_index < (8 * NUMBOARDS)){
+									switch(index - 2){
+										case 0:
+											//channel
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].flags)), byte & ENC_FLAGS);
+											break;
+										case 1:
+											//chan
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].chan)), byte & 0x0F);
+											break;
+										case 2:
+											//num
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].num)), byte & 0x7F);
+											break;
+										case 3:
+											//button chan
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].btn.chan)), byte & 0x0F);
+											break;
+										case 4:
+											//button num
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].btn.num)), byte & 0x7F);
+											send_ack = true;
+											break;
+										default:
+											sysex_in = false;
+											break;
+									}
+								} else
+									sysex_in = false;
+							} else if(sysex_in_type == SET_BUTTON_DATA && index > 1){
+								//make sure we're in range
+								if(sysex_setting_index < (4 * NUMBOARDS)){
+									switch(index - 2){
+										case 0:
+											//channel
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(button_settings[sysex_setting_index].chan)), byte & 0x0f);
+											break;
+										case 1:
+											//num
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(button_settings[sysex_setting_index].num)), byte & 0x7f);
+											send_ack = true;
+											break;
+										default:
+											//if there is more data, ditch it
+											sysex_in = false;
+											break;
+									} 
+								} else
+									sysex_in = false;
+							} else
+								sysex_in = false;
+						}
 					}
 					sysex_in_cnt++;
 				}
@@ -454,10 +565,13 @@ TASK(SHIFT_REG_Task)
 
 						//get the cc num
 						eeprom_busy_wait();
+						uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].btn.chan));
+						eeprom_busy_wait();
 						uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
 
+						//send the CC chan
+						Buffer_StoreElement(&midiout_buf, 0x80 | (chan & 0x0F));
 						//send the CC index
-						Buffer_StoreElement(&midiout_buf, 0x80);
 						Buffer_StoreElement(&midiout_buf, num);
 
 						//send the CC value

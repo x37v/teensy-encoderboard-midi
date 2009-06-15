@@ -36,10 +36,19 @@
 #ifndef _AUDIO_OUTPUT_H_
 #define _AUDIO_OUTPUT_H_
 
+#define VERSION 1
 #define HISTORY 4
 #define NUMBOARDS 2
 #define ENC_BTN_CC_OFFSET 16
 #define BTN_CC_OFFSET 32
+
+typedef enum sysex_types {
+	GET_VERSION = 0,
+	GET_NUM_BOARDS = 1,
+	SET_ENCODER_DATA = 2,
+	SET_BUTTON_DATA = 3,
+	SYSEX_INVALID = 4
+} sysex_t;
 
 /* Includes: */
 #include <avr/io.h>
@@ -66,6 +75,9 @@ typedef struct {
 #define ENC_DETENT_ONLY 0x2
 //if set then the button acts as a multiplier not its own cc
 #define ENC_BUTTON_MUL 0x10
+
+//falid flags for encoders
+#define ENC_FLAGS (ENC_ABSOLUTE | ENC_DETENT_ONLY | ENC_BUTTON_MUL)
 
 typedef struct {
 	//settings
@@ -106,9 +118,13 @@ const uint8_t sysex_header[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0};
 const uint8_t sysex_ack[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0};
 #define SYSEX_ACK_SIZE 7
 
-//the header, code 0, boardcount
-const uint8_t sysex_boards[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, 0, NUMBOARDS};
+//the header, code, boardcount
+const uint8_t sysex_boards[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, GET_NUM_BOARDS, NUMBOARDS};
 #define SYSEX_BOARD_CNT_SIZE 9
+
+//the header, code, version
+const uint8_t sysex_version[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, GET_VERSION, VERSION};
+#define SYSEX_VERSION_SIZE 9
 
 /** Convenience macro. MIDI channels are numbered from 1-10 (natural numbers) however the logical channel
  *  addresses are zero-indexed. This converts a natural MIDI channel number into the logical channel address.
