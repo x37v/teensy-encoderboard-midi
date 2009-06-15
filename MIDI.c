@@ -162,12 +162,11 @@ int main(void)
 		enc_btn_down[i] = 0;
 
 	for(i = 0; i < 8 * NUMBOARDS; i++){
-		encoder_t setting;
-
 		//set the initial value for the encoder [absolute]
 		enc_value[i] = 0;
 
 		/*
+		encoder_t setting;
 		//see if stuff is already set, test for CHAN == 0xFF
 		eeprom_busy_wait();
 		if(eeprom_read_byte((void *)&(encoder_settings[i].chan)) == 0xFF)
@@ -192,10 +191,10 @@ int main(void)
 		*/
 	}
 
+	/*
 	for(i = 0; i < 4 * NUMBOARDS; i++){
 		button_t setting;
 
-		/*
 		//see if stuff is already set, test for CHAN == 0xFF
 		eeprom_busy_wait();
 		if(eeprom_read_byte((void *)&(button_settings[i].chan)) == 0xFF)
@@ -208,8 +207,8 @@ int main(void)
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
-		*/
 	}
+	*/
 
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
