@@ -62,6 +62,10 @@ volatile uint8_t button_last[2 * NUMBOARDS];
 volatile uint8_t enc_btn_down[NUMBOARDS];
 volatile uint8_t enc_value[8 * NUMBOARDS];
 
+volatile bool send_ack;
+volatile bool sysex_in;
+volatile uint8_t sysex_in_cnt;
+
 //eeprom stuff
 button_t EEMEM button_settings[4 * NUMBOARDS];
 encoder_t EEMEM encoder_settings[8 * NUMBOARDS];
@@ -137,6 +141,10 @@ int main(void)
 	//init ports [d6 is the LED]
 	DDRD |= _BV(PIND1) | _BV(PIND4) | _BV(PIND6);
 	DDRD &= ~_BV(PIND0);
+
+	send_ack = false;
+	sysex_in = false;
+	sysex_in_cnt = 0;
 
 	//initially everything is 'up'
 	for(i = 0; i < (2 * NUMBOARDS); i++)
@@ -250,6 +258,11 @@ TASK(USB_MIDI_Task)
 	/* Check if endpoint is ready to be written to */
 	if (Endpoint_IsINReady())
 	{
+		if(send_ack){
+			send_ack = false;
+			while (!(Endpoint_IsINReady()));
+			SendSysex(sysex_ack, SYSEX_ACK_SIZE, 0);
+		}
 		if (midiout_buf.Elements > 2){
 			/* Wait until Serial Tx Endpoint Ready for Read/Write */
 			while (!(Endpoint_IsINReady()));
@@ -271,9 +284,41 @@ TASK(USB_MIDI_Task)
 	/* Select the MIDI OUT stream */
 	Endpoint_SelectEndpoint(MIDI_STREAM_OUT_EPNUM);
 
-	/* Check if endpoint is ready to be read from, if so discard its (unused) data */
-	if (Endpoint_IsOUTReceived())
+	if (Endpoint_IsOUTReceived()){
+		while (Endpoint_BytesInEndpoint()){
+			uint8_t i;
+			//always comes in packets of 4 bytes
+			Endpoint_Read_Byte();
+			//ditch the first byte and grab the next 3
+			for(i = 0; i < 3; i++){
+				uint8_t byte = Endpoint_Read_Byte();
+				if(byte == SYSEX_BEGIN) {
+					sysex_in = true;
+					sysex_in_cnt = 0;
+				} else if(byte == SYSEX_END){
+					//if we were in sysex mode and we just got a header [just a ping]
+					//send an ack
+					if(sysex_in && sysex_in_cnt == SYSEX_HEADER_SIZE)
+						send_ack = true;
+					sysex_in = false;
+				} else if(byte & 0x80){
+					//if the top bit is set then we leave sysex mode
+					sysex_in = false;
+				} else if(sysex_in){
+					//match the header
+					if(sysex_in_cnt < SYSEX_HEADER_SIZE){
+						if(!sysex_header[sysex_in_cnt] == byte)
+							sysex_in = false;
+					} else {
+						//here we have matched the header and we're parsing input data
+					}
+					sysex_in_cnt++;
+				}
+			}
+		}
+		// Clear the endpoint buffer
 		Endpoint_ClearOUT();
+	}
 }
 
 TASK(SHIFT_REG_Task)
