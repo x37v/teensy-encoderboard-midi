@@ -32,7 +32,7 @@ File.open(SYSEX_FILE, "w"){ |f|
     f.print 0.chr
     #bun num/mul
     if flags & ENC_BUTTON_MUL != 0
-      f.print 8.chr
+      f.print 4.chr
     else
       f.print((i + (NUM_BOARDS * 12)).chr)
     end
