@@ -50,6 +50,13 @@ TASK_LIST
 
 //hold the data to send
 RingBuff_t midiout_buf;
+typedef enum {
+	SEND_ENCODER,
+	SEND_BUTTON,
+	SEND_ALL
+} command_t;
+//hold commands [send sysex data dumps]
+RingBuff_t cmd_buf;
 
 volatile uint8_t encoder_hist[2 * NUMBOARDS][HISTORY];
 volatile uint8_t button_hist[2 * NUMBOARDS][HISTORY];
@@ -70,6 +77,10 @@ volatile uint8_t sysex_in_cnt;
 volatile sysex_t sysex_in_type;
 //this indexes an encoder or button based on the type set above
 volatile uint8_t sysex_setting_index;
+
+//header + command_code + index + data
+//used for buttons as well
+volatile uint8_t sysex_out_buffer[SYSEX_HEADER_SIZE + 7];
 
 //eeprom stuff
 button_t EEMEM button_settings[4 * NUMBOARDS];
@@ -142,6 +153,7 @@ int main(void)
 
 	//init ringbuffers
 	Buffer_Initialize(&midiout_buf);
+	Buffer_Initialize(&cmd_buf);
 
 	//init ports [d6 is the LED]
 	DDRD |= _BV(PIND1) | _BV(PIND4) | _BV(PIND6);
@@ -209,6 +221,10 @@ int main(void)
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
 	}
 	*/
+
+	//init the sysex out for button and encoders for sending button and encoder data
+	for(i = 0; i < SYSEX_HEADER_SIZE; i++)
+		sysex_out_buffer[i] = sysex_header[i];
 
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
@@ -293,6 +309,62 @@ TASK(USB_MIDI_Task)
 			while (!(Endpoint_IsINReady()));
 			SendSysex(sysex_version, SYSEX_VERSION_SIZE, 0);
 		}
+		//deal with commands
+		if(cmd_buf.Elements > 1){
+			while (!(Endpoint_IsINReady()));
+			if(Endpoint_BytesInEndpoint() < MIDI_STREAM_EPSIZE){
+				uint8_t cmd = Buffer_GetElement(&cmd_buf);
+				uint8_t index;
+				//the cmd always has the top bit set
+				if(cmd & 0x80){
+					switch(cmd & 0x7F){
+						case SEND_ENCODER:
+							index = Buffer_GetElement(&cmd_buf);
+							if(index < NUMBOARDS * 8){
+								//fill and send the sysex out buffer
+								sysex_out_buffer[SYSEX_HEADER_SIZE] = RET_ENCODER_DATA;
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 1] = index;
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 2] = 
+									eeprom_read_byte((void *)&(encoder_settings[index].flags));
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 3] = 
+									eeprom_read_byte((void *)&(encoder_settings[index].chan));
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 4] = 
+									eeprom_read_byte((void *)&(encoder_settings[index].num));
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 5] = 
+									eeprom_read_byte((void *)&(encoder_settings[index].btn.chan));
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 6] = 
+									eeprom_read_byte((void *)&(encoder_settings[index].btn.num));
+								while (!(Endpoint_IsINReady()));
+								SendSysex(sysex_out_buffer, SYSEX_HEADER_SIZE + 7, 0);
+							}
+							break;
+						case SEND_BUTTON:
+							index = Buffer_GetElement(&cmd_buf);
+							if(index < NUMBOARDS * 4){
+								//fill and send the sysex out buffer
+								sysex_out_buffer[SYSEX_HEADER_SIZE] = RET_BUTTON_DATA;
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 1] = index;
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 2] = 
+									eeprom_read_byte((void *)&(button_settings[index].chan));
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 3] = 
+									eeprom_read_byte((void *)&(button_settings[index].num));
+								while (!(Endpoint_IsINReady()));
+								SendSysex(sysex_out_buffer, SYSEX_HEADER_SIZE + 4, 0);
+							}
+							break;
+						default:
+							break;
+					};
+				}
+			}
+		}
 		if (midiout_buf.Elements > 2){
 			/* Wait until Serial Tx Endpoint Ready for Read/Write */
 			while (!(Endpoint_IsINReady()));
@@ -350,17 +422,33 @@ TASK(USB_MIDI_Task)
 							} else if (byte == GET_NUM_BOARDS){
 								send_num_boards = true;
 								sysex_in = false;
+								//XXX should deal with a dump all here
 							} else if (byte < SYSEX_INVALID){
 								sysex_in_type = byte;
 							} else {
 								sysex_in_type = SYSEX_INVALID;
 								sysex_in = false;
 							}
-						} else {
-							//if we're setting encoder or buton data, and we're at index 1, set the button/encoder index
-							if(index == 1 && (sysex_in_type == SET_ENCODER_DATA || sysex_in_type == SET_BUTTON_DATA)){
+						} else if(index == 1){
+							if (sysex_in_type == SET_ENCODER_DATA || sysex_in_type == SET_BUTTON_DATA)
 								sysex_setting_index = byte;
-							} else if(sysex_in_type == SET_ENCODER_DATA && index > 1){
+							else if(sysex_in_type == GET_ENCODER_DATA){
+								if(byte < (8 * NUMBOARDS)){
+									Buffer_StoreElement(&cmd_buf, 0x80 | SEND_ENCODER);
+									Buffer_StoreElement(&cmd_buf, byte);
+								}
+								sysex_in = false;
+								sysex_in_type = SYSEX_INVALID;
+							} else if(sysex_in_type == GET_BUTTON_DATA){
+								if(byte < (4 * NUMBOARDS)){
+									Buffer_StoreElement(&cmd_buf, 0x80 | SEND_BUTTON);
+									Buffer_StoreElement(&cmd_buf, byte);
+								}
+								sysex_in = false;
+								sysex_in_type = SYSEX_INVALID;
+							}
+						} else if(index > 1) { 
+							if(sysex_in_type == SET_ENCODER_DATA){
 								//make sure we're in range
 								if(sysex_setting_index < (8 * NUMBOARDS)){
 									switch(index - 2){
@@ -392,11 +480,14 @@ TASK(USB_MIDI_Task)
 											break;
 										default:
 											sysex_in = false;
+											sysex_in_type = SYSEX_INVALID;
 											break;
 									}
-								} else
+								} else {
 									sysex_in = false;
-							} else if(sysex_in_type == SET_BUTTON_DATA && index > 1){
+									sysex_in_type = SYSEX_INVALID;
+								}
+							} else if(sysex_in_type == SET_BUTTON_DATA){
 								//make sure we're in range
 								if(sysex_setting_index < (4 * NUMBOARDS)){
 									switch(index - 2){
@@ -414,12 +505,17 @@ TASK(USB_MIDI_Task)
 										default:
 											//if there is more data, ditch it
 											sysex_in = false;
+											sysex_in_type = SYSEX_INVALID;
 											break;
 									} 
-								} else
+								} else {
 									sysex_in = false;
-							} else
+									sysex_in_type = SYSEX_INVALID;
+								}
+							} else {
 								sysex_in = false;
+								sysex_in_type = SYSEX_INVALID;
+							}
 						}
 					}
 					sysex_in_cnt++;

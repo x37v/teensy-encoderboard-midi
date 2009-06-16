@@ -42,12 +42,18 @@
 #define ENC_BTN_CC_OFFSET 16
 #define BTN_CC_OFFSET 32
 
-typedef enum sysex_types {
+typedef enum {
 	GET_VERSION = 0,
 	GET_NUM_BOARDS = 1,
-	SET_ENCODER_DATA = 2,
-	SET_BUTTON_DATA = 3,
-	SYSEX_INVALID = 4
+	GET_ENCODER_DATA = 2,
+	GET_BUTTON_DATA = 3,
+	SET_ENCODER_DATA = 4,
+	SET_BUTTON_DATA = 5,
+	RET_VERSION = 6,
+	RET_NUM_BOARDS = 7,
+	RET_ENCODER_DATA = 8,
+	RET_BUTTON_DATA = 9,
+	SYSEX_INVALID = 10
 } sysex_t;
 
 /* Includes: */
@@ -119,11 +125,11 @@ const uint8_t sysex_ack[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0};
 #define SYSEX_ACK_SIZE 7
 
 //the header, code, boardcount
-const uint8_t sysex_boards[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, GET_NUM_BOARDS, NUMBOARDS};
+const uint8_t sysex_boards[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, RET_NUM_BOARDS, NUMBOARDS};
 #define SYSEX_BOARD_CNT_SIZE 9
 
 //the header, code, version
-const uint8_t sysex_version[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, GET_VERSION, VERSION};
+const uint8_t sysex_version[] = {SYSEX_EDUMANUFID, 98, 117, 122, 122, 114, 0, RET_VERSION, VERSION};
 #define SYSEX_VERSION_SIZE 9
 
 /** Convenience macro. MIDI channels are numbered from 1-10 (natural numbers) however the logical channel
