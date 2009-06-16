@@ -69,6 +69,10 @@ volatile uint8_t button_last[2 * NUMBOARDS];
 volatile uint8_t enc_btn_down[NUMBOARDS];
 volatile uint8_t enc_value[8 * NUMBOARDS];
 
+//this holds the channel and cc number for all the encoders, 
+//so we can quickly match incoming values
+volatile midi_cc_t enc_chan_num[8 * NUMBOARDS];
+
 volatile bool send_ack;
 volatile bool send_version;
 volatile bool send_num_boards;
@@ -83,7 +87,7 @@ volatile uint8_t sysex_setting_index;
 volatile uint8_t sysex_out_buffer[SYSEX_HEADER_SIZE + 7];
 
 //eeprom stuff
-button_t EEMEM button_settings[4 * NUMBOARDS];
+midi_cc_t EEMEM button_settings[4 * NUMBOARDS];
 encoder_t EEMEM encoder_settings[8 * NUMBOARDS];
 
 void tick_clock(void){
@@ -176,6 +180,10 @@ int main(void)
 	for(i = 0; i < 8 * NUMBOARDS; i++){
 		//set the initial value for the encoder [absolute]
 		enc_value[i] = 0;
+		eeprom_busy_wait();
+		enc_chan_num[i].chan = eeprom_read_byte((void *)&(encoder_settings[i].chan));
+		eeprom_busy_wait();
+		enc_chan_num[i].num = eeprom_read_byte((void *)&(encoder_settings[i].num));
 
 		/*
 		encoder_t setting;
@@ -205,7 +213,7 @@ int main(void)
 
 	/*
 	for(i = 0; i < 4 * NUMBOARDS; i++){
-		button_t setting;
+		midi_cc_t setting;
 
 		//see if stuff is already set, test for CHAN == 0xFF
 		eeprom_busy_wait();
@@ -218,7 +226,7 @@ int main(void)
 		//write to eeprom
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
-		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(button_t));
+		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(midi_cc_t));
 	}
 	*/
 
@@ -327,12 +335,8 @@ TASK(USB_MIDI_Task)
 								eeprom_busy_wait();
 								sysex_out_buffer[SYSEX_HEADER_SIZE + 2] = 
 									eeprom_read_byte((void *)&(encoder_settings[index].flags));
-								eeprom_busy_wait();
-								sysex_out_buffer[SYSEX_HEADER_SIZE + 3] = 
-									eeprom_read_byte((void *)&(encoder_settings[index].chan));
-								eeprom_busy_wait();
-								sysex_out_buffer[SYSEX_HEADER_SIZE + 4] = 
-									eeprom_read_byte((void *)&(encoder_settings[index].num));
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 3] = enc_chan_num[index].chan;
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 4] = enc_chan_num[index].num;
 								eeprom_busy_wait();
 								sysex_out_buffer[SYSEX_HEADER_SIZE + 5] = 
 									eeprom_read_byte((void *)&(encoder_settings[index].btn.chan));
@@ -460,11 +464,13 @@ TASK(USB_MIDI_Task)
 										case 1:
 											//chan
 											eeprom_busy_wait();
+											enc_chan_num[sysex_setting_index].chan = byte & 0x0F;
 											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].chan)), byte & 0x0F);
 											break;
 										case 2:
 											//num
 											eeprom_busy_wait();
+											enc_chan_num[sysex_setting_index].num = byte & 0x7F;
 											eeprom_write_byte((void *)(&(encoder_settings[sysex_setting_index].num)), byte & 0x7F);
 											break;
 										case 3:
@@ -577,10 +583,8 @@ TASK(SHIFT_REG_Task)
 							((state == 0x0) || (state == 0x3))){
 						int8_t enc_offset = decode(state, last_state);
 						if(enc_offset != 0){
-							eeprom_busy_wait();
-							uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].chan));
-							eeprom_busy_wait();
-							uint8_t num = eeprom_read_byte((void *)&(encoder_settings[index].num));
+							uint8_t chan = enc_chan_num[index].chan;
+							uint8_t num = enc_chan_num[index].num;
 
 							//if the button is doing multiplying, do that
 							if(flags & ENC_BUTTON_MUL){
@@ -658,7 +662,7 @@ TASK(SHIFT_REG_Task)
 					//if we're doing a mul then we just set the down state
 					if(!(flags & ENC_BUTTON_MUL)){
 
-						//get the cc num
+						//get the cc chan and num
 						eeprom_busy_wait();
 						uint8_t chan = eeprom_read_byte((void *)&(encoder_settings[index].btn.chan));
 						eeprom_busy_wait();
@@ -697,10 +701,10 @@ TASK(SHIFT_REG_Task)
 			if(consistent){
 				//has the state changed?
 				if((button_last[1 + board * 2] & mask) != (button_hist[1 + board * 2][0] & mask)){
-					button_t setting;
+					midi_cc_t setting;
 					eeprom_busy_wait();
-					//eeprom_read_block((void *)&setting, (const void *)((i + board * 4) * sizeof(button_t)), sizeof(button_t));
-					eeprom_read_block((void *)&setting, (void *)(&button_settings[i + board * 4]), sizeof(button_t));
+					//eeprom_read_block((void *)&setting, (const void *)((i + board * 4) * sizeof(midi_cc_t)), sizeof(midi_cc_t));
+					eeprom_read_block((void *)&setting, (void *)(&button_settings[i + board * 4]), sizeof(midi_cc_t));
 
 					//send the channel and CC index
 					Buffer_StoreElement(&midiout_buf, 0x80 | setting.chan);

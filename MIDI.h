@@ -72,7 +72,7 @@ typedef struct {
 	//which midi channel and which cc number (or multiplier)
 	uint8_t chan;
 	uint8_t num;
-} button_t;
+} midi_cc_t;
 
 //these are settings for the encoders
 //if set then we send absolute not relative values [and keep a count]
@@ -94,7 +94,7 @@ typedef struct {
 	uint8_t num;
 
 	//button
-	button_t btn;
+	midi_cc_t btn;
 } encoder_t;
 
 /* Macros: */
