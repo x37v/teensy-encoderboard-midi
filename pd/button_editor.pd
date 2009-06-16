@@ -1,0 +1,37 @@
+#N canvas 242 234 497 465 10;
+#X obj 101 101 cnv 15 38 58 empty empty empty 20 12 0 14 -233017 -66577
+0;
+#X obj 102 114 nbx 3 14 1 16 0 0 empty empty chan 0 -8 0 10 -262144
+-1 -1 16 256;
+#X obj 102 141 nbx 3 14 0 127 0 0 empty empty num 0 -8 0 10 -262144
+-1 -1 0 256;
+#X obj 102 22 inlet;
+#X obj 102 51 route chan num;
+#X obj 69 381 pack 0 0;
+#X obj 102 347 t b f;
+#X obj 102 165 int;
+#X msg 130 231 set \$1;
+#X obj 62 177 int;
+#X msg 69 233 set \$1;
+#X obj 102 325 change;
+#X obj 62 270 change;
+#X obj 69 411 outlet;
+#X obj 62 299 - 1;
+#X connect 1 0 9 0;
+#X connect 2 0 7 0;
+#X connect 3 0 4 0;
+#X connect 4 0 1 0;
+#X connect 4 1 2 0;
+#X connect 5 0 13 0;
+#X connect 6 0 5 0;
+#X connect 6 1 5 1;
+#X connect 7 0 8 0;
+#X connect 7 0 11 0;
+#X connect 8 0 2 0;
+#X connect 9 0 10 0;
+#X connect 9 0 12 0;
+#X connect 10 0 1 0;
+#X connect 11 0 6 0;
+#X connect 12 0 14 0;
+#X connect 14 0 5 0;
+#X coords 0 -1 1 1 40 60 2 100 100;
