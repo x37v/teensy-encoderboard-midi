@@ -1,6 +1,5 @@
-requires LUFA 081217
+requires LUFA 090510
 http://www.fourwalledcubicle.com/LUFA.php
-Should upgrade
 
 Modified from LUFA examples by Alex Norman
 
