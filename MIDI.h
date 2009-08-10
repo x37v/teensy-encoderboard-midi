@@ -151,6 +151,7 @@ enum MIDI_StatusCodes_t
 /* Task Definitions: */
 TASK(USB_MIDI_Task);
 TASK(SHIFT_REG_Task);
+TASK(ADC_Task);
 
 /* Event Handlers: */
 /** Indicates that this module will catch the USB_Connect event when thrown by the library. */

@@ -40,12 +40,15 @@
 #include <util/delay.h>
 #include <avr/eeprom.h>
 
+#define ADC_SMOOTHING_AMT 2
+
 /* Scheduler Task List */
 TASK_LIST
 {
 	{ .Task = USB_USBTask          , .TaskStatus = TASK_STOP },
 		{ .Task = USB_MIDI_Task        , .TaskStatus = TASK_STOP },
 		{ .Task = SHIFT_REG_Task        , .TaskStatus = TASK_STOP },
+		{ .Task = ADC_Task        , .TaskStatus = TASK_STOP },
 };
 
 //hold the data to send
@@ -143,6 +146,8 @@ int8_t decode(uint8_t enc_current, uint8_t enc_last){
 	return 0;
 }
 
+volatile uint8_t adc;
+
 int main(void)
 {
 	uint8_t i;
@@ -234,8 +239,25 @@ int main(void)
 	for(i = 0; i < SYSEX_HEADER_SIZE; i++)
 		sysex_out_buffer[i] = sysex_header[i];
 
+
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
+
+	//set up ADC
+	DIDR0 = 0xFF;
+	//left adjust, channel 0
+	ADMUX = _BV(ADLAR) | _BV(REFS0);
+	//enable and start a conversion
+	ADCSRA = _BV(ADSC) | _BV(ADEN) | _BV(ADPS1) | _BV(ADPS2);
+
+	//wait for conversion to be done
+	while(!(ADCSRA & _BV(ADIF)));
+
+	//grab it
+	adc = ADCH >> 1;
+
+	//start another conversion
+	ADCSRA |= _BV(ADSC);
 
 	/* Initialize Scheduler so that it can be used */
 	Scheduler_Init();
@@ -266,6 +288,7 @@ EVENT_HANDLER(USB_Disconnect)
 	Scheduler_SetTaskMode(USB_MIDI_Task, TASK_STOP);
 	Scheduler_SetTaskMode(USB_USBTask, TASK_STOP);
 	Scheduler_SetTaskMode(SHIFT_REG_Task, TASK_STOP);
+	Scheduler_SetTaskMode(ADC_Task, TASK_STOP);
 
 	/* Indicate USB not ready */
 	UpdateStatus(Status_USBNotReady);
@@ -291,6 +314,7 @@ EVENT_HANDLER(USB_ConfigurationChanged)
 	/* Start MIDI task */
 	Scheduler_SetTaskMode(USB_MIDI_Task, TASK_RUN);
 	Scheduler_SetTaskMode(SHIFT_REG_Task, TASK_RUN);
+	Scheduler_SetTaskMode(ADC_Task, TASK_RUN);
 }
 
 /** Task to handle the generation of MIDI note change events in response to presses of the board joystick, and send them
@@ -530,6 +554,31 @@ TASK(USB_MIDI_Task)
 		}
 		// Clear the endpoint buffer
 		Endpoint_ClearOUT();
+	}
+}
+
+TASK(ADC_Task)
+{
+	//if an conversion is complete
+	if(ADCSRA & _BV(ADIF)){
+		//read in and smooth
+		uint16_t new_adc = ADCH + ADC_SMOOTHING_AMT * (uint16_t)(adc << 1);
+		new_adc /= (ADC_SMOOTHING_AMT + 1);
+		//if the LS bit is set and we'd have 0x7D if we shifted, make it 0x7F
+		//otherwise just shift the result and mask.. if we don't do this we never
+		//make it to 0x7F
+		if(new_adc == 0xFB)
+			new_adc = 0x7F;
+		else
+			new_adc = (new_adc >> 1) & 0x7F;
+		if(new_adc != adc){
+			Buffer_StoreElement(&midiout_buf, 0x80 | 10);
+			Buffer_StoreElement(&midiout_buf, 0);
+			Buffer_StoreElement(&midiout_buf, new_adc);
+			adc = new_adc;
+		}
+		//enable and start another conversion
+		ADCSRA |= _BV(ADSC);
 	}
 }
 
