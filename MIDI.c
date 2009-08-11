@@ -41,6 +41,8 @@
 #include <avr/eeprom.h>
 
 #define ADC_SMOOTHING_AMT 2
+//mask off the mux selection
+#define ADC_MUX_MASK 0xE0
 
 /* Scheduler Task List */
 TASK_LIST
@@ -146,7 +148,8 @@ int8_t decode(uint8_t enc_current, uint8_t enc_last){
 	return 0;
 }
 
-volatile uint8_t adc;
+volatile uint8_t adc[4];
+volatile uint8_t adc_index;
 
 int main(void)
 {
@@ -247,17 +250,22 @@ int main(void)
 	DIDR0 = 0xFF;
 	//left adjust, channel 0
 	ADMUX = _BV(ADLAR) | _BV(REFS0);
-	//enable and start a conversion
-	ADCSRA = _BV(ADSC) | _BV(ADEN) | _BV(ADPS1) | _BV(ADPS2);
+	//enable 
+	ADCSRA = _BV(ADEN) | _BV(ADPS1) | _BV(ADPS2);
 
-	//wait for conversion to be done
-	while(!(ADCSRA & _BV(ADIF)));
+	for(adc_index = 0; adc_index < 4; adc_index++){
+		ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
+		//start a conversion
+		ADCSRA |= _BV(ADSC);
 
-	//grab it
-	adc = ADCH >> 1;
+		//wait for conversion to be done
+		while(!(ADCSRA & _BV(ADIF)));
 
-	//start another conversion
-	ADCSRA |= _BV(ADSC);
+		//grab it
+		adc[adc_index] = ADCH >> 1;
+	}
+	adc_index = 0;
+
 
 	/* Initialize Scheduler so that it can be used */
 	Scheduler_Init();
@@ -561,8 +569,11 @@ TASK(ADC_Task)
 {
 	//if an conversion is complete
 	if(ADCSRA & _BV(ADIF)){
+		uint8_t index = adc_index;
+		adc_index = (adc_index + 1) % 4;
+		ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
 		//read in and smooth
-		uint16_t new_adc = ADCH + ADC_SMOOTHING_AMT * (uint16_t)(adc << 1);
+		uint16_t new_adc = ADCH + ADC_SMOOTHING_AMT * (uint16_t)(adc[index] << 1);
 		new_adc /= (ADC_SMOOTHING_AMT + 1);
 		//if the LS bit is set and we'd have 0x7D if we shifted, make it 0x7F
 		//otherwise just shift the result and mask.. if we don't do this we never
@@ -571,11 +582,12 @@ TASK(ADC_Task)
 			new_adc = 0x7F;
 		else
 			new_adc = (new_adc >> 1) & 0x7F;
-		if(new_adc != adc){
+		//XXX need a Pullup!
+		if(new_adc != adc[index]){
 			Buffer_StoreElement(&midiout_buf, 0x80 | 10);
-			Buffer_StoreElement(&midiout_buf, 0);
+			Buffer_StoreElement(&midiout_buf, index);
 			Buffer_StoreElement(&midiout_buf, new_adc);
-			adc = new_adc;
+			adc[index] = new_adc;
 		}
 		//enable and start another conversion
 		ADCSRA |= _BV(ADSC);
