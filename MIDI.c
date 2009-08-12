@@ -577,7 +577,7 @@ TASK(ADC_Task)
 		new_adc /= (ADC_SMOOTHING_AMT + 1);
 		//if the LS bit is set and we'd have 0x7D if we shifted, make it 0x7F
 		//otherwise just shift the result and mask.. if we don't do this we never
-		//make it to 0x7F
+		//make it to 0x7F, but we also never seem to get 0x7E
 		if(new_adc == 0xFB)
 			new_adc = 0x7F;
 		else
