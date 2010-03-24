@@ -537,7 +537,7 @@ gccversion :
 #	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
 
 program: $(TARGET).hex
-	@teensy_loader_cli -p -w -v $(TARGET).hex
+	@teensy_loader_cli -mmcu=$(MCU) -p -w -v $(TARGET).hex
 
 
 flip: $(TARGET).hex

@@ -582,11 +582,14 @@ TASK(ADC_Task)
 			new_adc = 0x7F;
 		else
 			new_adc = (new_adc >> 1) & 0x7F;
-		//XXX need a Pullup!
 		if(new_adc != adc[index]){
-			Buffer_StoreElement(&midiout_buf, 0x80 | 10);
-			Buffer_StoreElement(&midiout_buf, index);
-			Buffer_StoreElement(&midiout_buf, new_adc);
+			//XXX ditch this
+			if(index == 0) {
+				//XXX make direction, index and channel configurable
+				Buffer_StoreElement(&midiout_buf, 0x80 | 10);
+				Buffer_StoreElement(&midiout_buf, index + 64);
+				Buffer_StoreElement(&midiout_buf, 127 - new_adc);
+			}
 			adc[index] = new_adc;
 		}
 		//enable and start another conversion
