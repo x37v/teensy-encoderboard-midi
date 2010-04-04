@@ -39,6 +39,7 @@
 #include "RingBuff.h"
 #include <util/delay.h>
 #include <avr/eeprom.h>
+#include <avr/power.h>
 
 #define ADC_SMOOTHING_AMT 2
 //mask off the mux selection
@@ -161,7 +162,8 @@ int main(void)
 	wdt_disable();
 
 	/* Disable clock division */
-	clock_prescale_set(clock_div_1);
+	//doesn't work on 32u4
+	//clock_prescale_set(clock_div_1);
 
 	//init ringbuffers
 	Buffer_Initialize(&midiout_buf);
@@ -193,7 +195,6 @@ int main(void)
 		eeprom_busy_wait();
 		enc_chan_num[i].num = eeprom_read_byte((void *)&(encoder_settings[i].num));
 
-		/*
 		encoder_t setting;
 		//see if stuff is already set, test for CHAN == 0xFF
 		eeprom_busy_wait();
@@ -216,10 +217,8 @@ int main(void)
 		eeprom_busy_wait();
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(encoder_settings[i])), (void *)&setting, sizeof(encoder_t));
-		*/
 	}
 
-	/*
 	for(i = 0; i < 4 * NUMBOARDS; i++){
 		midi_cc_t setting;
 
@@ -236,7 +235,6 @@ int main(void)
 		//XXX the src + dst changes.. i'm using libc 1.6.2
 		eeprom_write_block((void *)(&(button_settings[i])), (void *)&setting, sizeof(midi_cc_t));
 	}
-	*/
 
 	//init the sysex out for button and encoders for sending button and encoder data
 	for(i = 0; i < SYSEX_HEADER_SIZE; i++)
@@ -254,7 +252,12 @@ int main(void)
 	ADCSRA = _BV(ADEN) | _BV(ADPS1) | _BV(ADPS2);
 
 	for(adc_index = 0; adc_index < 4; adc_index++){
-		ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
+		if (adc_index < 2)
+			ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
+		else if (adc_index == 2)
+			ADMUX = (ADMUX & ADC_MUX_MASK) | 0x4;
+		else
+			ADMUX = (ADMUX & ADC_MUX_MASK) | 0x5;
 		//start a conversion
 		ADCSRA |= _BV(ADSC);
 
@@ -571,7 +574,13 @@ TASK(ADC_Task)
 	if(ADCSRA & _BV(ADIF)){
 		uint8_t index = adc_index;
 		adc_index = (adc_index + 1) % 4;
-		ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
+		//we are using 0,1,3,4 inputs
+		if (adc_index < 2)
+			ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
+		else if (adc_index == 2)
+			ADMUX = (ADMUX & ADC_MUX_MASK) | 0x4;
+		else
+			ADMUX = (ADMUX & ADC_MUX_MASK) | 0x5;
 		//read in and smooth
 		uint16_t new_adc = ADCH + ADC_SMOOTHING_AMT * (uint16_t)(adc[index] << 1);
 		new_adc /= (ADC_SMOOTHING_AMT + 1);
@@ -583,13 +592,10 @@ TASK(ADC_Task)
 		else
 			new_adc = (new_adc >> 1) & 0x7F;
 		if(new_adc != adc[index]){
-			//XXX ditch this
-			if(index == 0) {
-				//XXX make direction, index and channel configurable
-				Buffer_StoreElement(&midiout_buf, 0x80 | 10);
-				Buffer_StoreElement(&midiout_buf, index + 64);
-				Buffer_StoreElement(&midiout_buf, 127 - new_adc);
-			}
+			//XXX make direction, index and channel configurable
+			Buffer_StoreElement(&midiout_buf, 0x80 | 10);
+			Buffer_StoreElement(&midiout_buf, index + 64);
+			Buffer_StoreElement(&midiout_buf, 127 - new_adc);
 			adc[index] = new_adc;
 		}
 		//enable and start another conversion
