@@ -45,6 +45,11 @@
 //mask off the mux selection
 #define ADC_MUX_MASK 0xE0
 
+//we are using a 32u4, though our compiler might not know
+#ifndef __AVR_ATmega32U4__
+#define __AVR_ATmega32U4__
+#endif
+
 /* Scheduler Task List */
 TASK_LIST
 {
@@ -147,6 +152,37 @@ int8_t decode(uint8_t enc_current, uint8_t enc_last){
 			return 0;
 	}
 	return 0;
+}
+
+//from the teensy web page
+void jump_to_bootloader() {
+	cli();
+	// disable watchdog, if enabled
+	// disable all peripherals
+	UDCON = 1;
+	USBCON = (1<<FRZCLK);  // disable USB
+	UCSR1B = 0;
+	_delay_ms(5);
+#if defined(__AVR_AT90USB162__)                // Teensy 1.0
+	DDRB = 0; DDRC = 0; DDRD = 0;
+	TIMSK0 = 0; TIMSK1 = 0;
+	asm volatile("jmp 0x1F00");
+#elif defined(__AVR_ATmega32U4__)              // Teensy 2.0
+	DDRB = 0; DDRC = 0; DDRD = 0; DDRE = 0; DDRF = 0;
+	TIMSK0 = 0; TIMSK1 = 0; TIMSK3 = 0; TIMSK4 = 0;
+	ADCSRA = 0;
+	asm volatile("jmp 0x3F00");
+#elif defined(__AVR_AT90USB646__)              // Teensy++ 1.0
+	DDRA = 0; DDRB = 0; DDRC = 0; DDRD = 0; DDRE = 0; DDRF = 0;
+	TIMSK0 = 0; TIMSK1 = 0; TIMSK2 = 0; TIMSK3 = 0;
+	ADCSRA = 0;
+	asm volatile("jmp 0x7E00");
+#elif defined(__AVR_AT90USB1286__)             // Teensy++ 2.0
+	DDRA = 0; DDRB = 0; DDRC = 0; DDRD = 0; DDRE = 0; DDRF = 0;
+	TIMSK0 = 0; TIMSK1 = 0; TIMSK2 = 0; TIMSK3 = 0;
+	ADCSRA = 0;
+	asm volatile("jmp 0xFE00");
+#endif 
 }
 
 volatile uint8_t adc[4];
@@ -462,6 +498,9 @@ TASK(USB_MIDI_Task)
 								send_num_boards = true;
 								sysex_in = false;
 								//XXX should deal with a dump all here
+							} else if (byte == JUMP_TO_BOOTLOADER) {
+								//TODO make this a little bit more complex?
+								jump_to_bootloader();
 							} else if (byte < SYSEX_INVALID){
 								sysex_in_type = byte;
 							} else {

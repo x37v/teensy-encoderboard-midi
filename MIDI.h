@@ -53,7 +53,8 @@ typedef enum {
 	RET_NUM_BOARDS = 7,
 	RET_ENCODER_DATA = 8,
 	RET_BUTTON_DATA = 9,
-	SYSEX_INVALID = 10
+	SYSEX_INVALID = 10,
+	JUMP_TO_BOOTLOADER = 127
 } sysex_t;
 
 /* Includes: */
