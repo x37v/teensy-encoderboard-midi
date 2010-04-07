@@ -88,9 +88,11 @@ typedef struct {
 #define ENC_DETENT_ONLY 0x2
 //if set then the button acts as a multiplier not its own cc
 #define ENC_BUTTON_MUL 0x10
+//if set then we send the encoder values as NRPNs
+#define ENC_USE_NRPN 0x4
 
 //falid flags for encoders
-#define ENC_FLAGS (ENC_ABSOLUTE | ENC_DETENT_ONLY | ENC_BUTTON_MUL)
+#define ENC_FLAGS (ENC_ABSOLUTE | ENC_DETENT_ONLY | ENC_BUTTON_MUL | ENC_USE_NRPN)
 
 typedef struct {
 	//settings

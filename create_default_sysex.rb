@@ -12,6 +12,7 @@ SET_ADC_DATA = 7
 ENC_ABSOLUTE = 0x1
 ENC_DETENT_ONLY = 0x2
 ENC_BUTTON_MUL = 0x10
+ENC_USE_NRPN = 0x4
 
 File.open(SYSEX_FILE, "w"){ |f|
   #encoders
@@ -24,7 +25,7 @@ File.open(SYSEX_FILE, "w"){ |f|
     #index
     f.print i.chr
     #flag
-    flags = ENC_DETENT_ONLY | ENC_BUTTON_MUL
+    flags = ENC_DETENT_ONLY | ENC_BUTTON_MUL | ENC_USE_NRPN | ENC_ABSOLUTE
     f.print flags.chr
     #chan
     f.print 0.chr

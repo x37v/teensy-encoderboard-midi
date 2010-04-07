@@ -69,6 +69,8 @@ typedef enum {
 //hold commands [send sysex data dumps]
 RingBuff_t cmd_buf;
 
+void storeNRPN(uint8_t num, uint16_t val, uint8_t chan);
+
 volatile uint8_t encoder_hist[2 * NUMBOARDS][HISTORY];
 volatile uint8_t button_hist[2 * NUMBOARDS][HISTORY];
 volatile uint8_t history = 0;
@@ -78,7 +80,7 @@ volatile uint8_t button_last[2 * NUMBOARDS];
 
 //flags to indicate that a button is down
 volatile uint8_t enc_btn_down[NUMBOARDS];
-volatile uint8_t enc_value[8 * NUMBOARDS];
+volatile uint16_t enc_value[8 * NUMBOARDS];
 
 //this holds the channel and cc number for all the encoders, 
 //so we can quickly match incoming values
@@ -709,23 +711,39 @@ TASK(SHIFT_REG_Task)
 
 							//are we doing absolute values?
 							if(flags & ENC_ABSOLUTE){
-								uint8_t out_value;
-								uint8_t last_value = enc_value[index];
-								//make sure to stay in range
-								if(enc_offset + (int8_t)last_value < 0)
-									out_value = 0;
-								else if (last_value + enc_offset > 127)
-									out_value = 127;
-								else
-									out_value = last_value + enc_offset;
+								uint16_t out_value;
+								uint16_t last_value = enc_value[index];
+								if(flags & ENC_USE_NRPN){
+									//make sure to stay in range
+									if(enc_offset + (int16_t)last_value < 0)
+										out_value = 0;
+									else if (last_value + enc_offset > 16383)
+										out_value = 16383;
+									else
+										out_value = last_value + enc_offset;
+									//only send/store if we have a new value
+									if(out_value != last_value){
+										storeNRPN(num, out_value, chan);
+										//store this value
+										enc_value[index] = out_value;
+									}
+								} else {
+									//make sure to stay in range
+									if(enc_offset + (int8_t)last_value < 0)
+										out_value = 0;
+									else if (last_value + enc_offset > 127)
+										out_value = 127;
+									else
+										out_value = last_value + enc_offset;
 
-								//only send/store if we have a new value
-								if(out_value != last_value){
-									Buffer_StoreElement(&midiout_buf, 0x80 | chan);
-									Buffer_StoreElement(&midiout_buf, num);
-									Buffer_StoreElement(&midiout_buf, out_value);
-									//store this value
-									enc_value[index] = out_value;
+									//only send/store if we have a new value
+									if(out_value != last_value){
+										Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+										Buffer_StoreElement(&midiout_buf, num);
+										Buffer_StoreElement(&midiout_buf, out_value);
+										//store this value
+										enc_value[index] = out_value;
+									}
 								}
 
 							} else {
@@ -974,4 +992,26 @@ void SendSysex(const uint8_t * buf, const uint8_t len, const uint8_t CableID)
 		// Send the data in the endpoint to the host
 		Endpoint_ClearIN();
 	}
+}
+
+void storeNRPN(uint8_t num, uint16_t val, uint8_t chan) {
+	//num MSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 99);
+	Buffer_StoreElement(&midiout_buf, 0);
+
+	//num LSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 98);
+	Buffer_StoreElement(&midiout_buf, num & 0x7f);
+
+	//value MSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 6);
+	Buffer_StoreElement(&midiout_buf, (val >> 7) & 0x7f);
+
+	//value LSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 38);
+	Buffer_StoreElement(&midiout_buf, val & 0x7f);
 }
