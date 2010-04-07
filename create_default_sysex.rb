@@ -25,7 +25,7 @@ File.open(SYSEX_FILE, "w"){ |f|
     #index
     f.print i.chr
     #flag
-    flags = ENC_DETENT_ONLY | ENC_BUTTON_MUL | ENC_USE_NRPN | ENC_ABSOLUTE
+    flags = ENC_BUTTON_MUL | ENC_DETENT_ONLY | ENC_ABSOLUTE
     f.print flags.chr
     #chan
     f.print 0.chr

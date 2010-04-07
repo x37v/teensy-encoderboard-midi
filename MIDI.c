@@ -69,7 +69,10 @@ typedef enum {
 //hold commands [send sysex data dumps]
 RingBuff_t cmd_buf;
 
+//send absolute NRPN messages
 void storeNRPN(uint8_t num, uint16_t val, uint8_t chan);
+//send relative NRPN messages
+void storeNRPNrelative(uint8_t num, int8_t val, uint8_t chan);
 
 volatile uint8_t encoder_hist[2 * NUMBOARDS][HISTORY];
 volatile uint8_t button_hist[2 * NUMBOARDS][HISTORY];
@@ -747,9 +750,14 @@ TASK(SHIFT_REG_Task)
 								}
 
 							} else {
-								Buffer_StoreElement(&midiout_buf, 0x80 | chan);
-								Buffer_StoreElement(&midiout_buf, num);
-								Buffer_StoreElement(&midiout_buf, 64 + enc_offset);
+								if(flags & ENC_USE_NRPN){
+									storeNRPNrelative(num, enc_offset, chan);
+								} else {
+									Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+									Buffer_StoreElement(&midiout_buf, num);
+									Buffer_StoreElement(&midiout_buf, 64 + enc_offset);
+								}
+
 							}
 						}
 
@@ -1014,4 +1022,28 @@ void storeNRPN(uint8_t num, uint16_t val, uint8_t chan) {
 	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
 	Buffer_StoreElement(&midiout_buf, 38);
 	Buffer_StoreElement(&midiout_buf, val & 0x7f);
+}
+
+void storeNRPNrelative(uint8_t num, int8_t val, uint8_t chan) {
+	if (val == 0)
+		return;
+	//num MSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 99);
+	Buffer_StoreElement(&midiout_buf, 0);
+
+	//num LSB
+	Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+	Buffer_StoreElement(&midiout_buf, 98);
+	Buffer_StoreElement(&midiout_buf, num & 0x7f);
+
+	if (val > 0) {
+		Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+		Buffer_StoreElement(&midiout_buf, 96);
+		Buffer_StoreElement(&midiout_buf, (uint8_t)val);
+	} else {
+		Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+		Buffer_StoreElement(&midiout_buf, 97);
+		Buffer_StoreElement(&midiout_buf, (uint8_t)(-val));
+	}
 }
