@@ -537,6 +537,9 @@ gccversion :
 #program: $(TARGET).hex $(TARGET).eep
 #	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
 
+enterbootload:
+	amidi -S "f0 7d 62 75 7a 7a 72 00 7f" -p hw:1,0,0 && sleep 0.1
+
 program: $(TARGET).hex
 	@teensy_loader_cli -mmcu=$(MCU) -p -w -v $(TARGET).hex
 

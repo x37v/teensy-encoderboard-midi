@@ -200,6 +200,7 @@ int main(void)
 	/* Disable clock division */
 	//doesn't work on 32u4
 	//clock_prescale_set(clock_div_1);
+	CLKPR = _BV(CLKPCE);
 
 	//init ringbuffers
 	Buffer_Initialize(&midiout_buf);
