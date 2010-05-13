@@ -64,6 +64,7 @@ RingBuff_t midiout_buf;
 typedef enum {
 	SEND_ENCODER,
 	SEND_BUTTON,
+	SEND_ADC,
 	SEND_ALL
 } command_t;
 //hold commands [send sysex data dumps]
@@ -105,6 +106,7 @@ volatile uint8_t sysex_out_buffer[SYSEX_HEADER_SIZE + 7];
 //eeprom stuff
 midi_cc_t EEMEM button_settings[4 * NUMBOARDS];
 encoder_t EEMEM encoder_settings[8 * NUMBOARDS];
+adc_t EEMEM adc_settings[NUM_ADCS];
 
 void tick_clock(void){
 	PORTD &= ~_BV(PORTD1);
@@ -190,7 +192,7 @@ void jump_to_bootloader() {
 #endif 
 }
 
-volatile uint8_t adc[4];
+volatile uint8_t adc[NUM_ADCS];
 volatile uint8_t adc_index;
 
 int main(void)
@@ -294,7 +296,7 @@ int main(void)
 	//enable 
 	ADCSRA = _BV(ADEN) | _BV(ADPS1) | _BV(ADPS2);
 
-	for(adc_index = 0; adc_index < 4; adc_index++){
+	for(adc_index = 0; adc_index < NUM_ADCS; adc_index++){
 		if (adc_index < 2)
 			ADMUX = (ADMUX & ADC_MUX_MASK) | adc_index;
 		else if (adc_index == 2)
@@ -441,6 +443,23 @@ TASK(USB_MIDI_Task)
 								SendSysex(sysex_out_buffer, SYSEX_HEADER_SIZE + 4, 0);
 							}
 							break;
+						case SEND_ADC:
+							index = Buffer_GetElement(&cmd_buf);
+							if(index < NUM_ADCS){
+								//fill and send the sysex out buffer
+								sysex_out_buffer[SYSEX_HEADER_SIZE] = RET_ADC_DATA;
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 1] = index;
+								eeprom_busy_wait();
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 2] = 
+									eeprom_read_byte((void *)&(adc_settings[index].flags));
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 3] = 
+									eeprom_read_byte((void *)&(adc_settings[index].chan));
+								sysex_out_buffer[SYSEX_HEADER_SIZE + 4] = 
+									eeprom_read_byte((void *)&(adc_settings[index].num));
+								while (!(Endpoint_IsINReady()));
+								SendSysex(sysex_out_buffer, SYSEX_HEADER_SIZE + 5, 0);
+							}
+							break;
 						default:
 							break;
 					};
@@ -515,9 +534,11 @@ TASK(USB_MIDI_Task)
 								sysex_in = false;
 							}
 						} else if(index == 1){
-							if (sysex_in_type == SET_ENCODER_DATA || sysex_in_type == SET_BUTTON_DATA)
+							if (sysex_in_type == SET_ENCODER_DATA || 
+									sysex_in_type == SET_BUTTON_DATA ||
+									sysex_in_type == SET_ADC_DATA) {
 								sysex_setting_index = byte;
-							else if(sysex_in_type == GET_ENCODER_DATA){
+							} else if(sysex_in_type == GET_ENCODER_DATA){
 								if(byte < (8 * NUMBOARDS)){
 									Buffer_StoreElement(&cmd_buf, 0x80 | SEND_ENCODER);
 									Buffer_StoreElement(&cmd_buf, byte);
@@ -527,6 +548,13 @@ TASK(USB_MIDI_Task)
 							} else if(sysex_in_type == GET_BUTTON_DATA){
 								if(byte < (4 * NUMBOARDS)){
 									Buffer_StoreElement(&cmd_buf, 0x80 | SEND_BUTTON);
+									Buffer_StoreElement(&cmd_buf, byte);
+								}
+								sysex_in = false;
+								sysex_in_type = SYSEX_INVALID;
+							} else if(sysex_in_type == GET_ADC_DATA) {
+								if(byte < NUM_ADCS){
+									Buffer_StoreElement(&cmd_buf, 0x80 | SEND_ADC);
 									Buffer_StoreElement(&cmd_buf, byte);
 								}
 								sysex_in = false;
@@ -599,6 +627,35 @@ TASK(USB_MIDI_Task)
 									sysex_in = false;
 									sysex_in_type = SYSEX_INVALID;
 								}
+							} else if(sysex_in_type == SET_ADC_DATA){
+								if(sysex_setting_index < NUM_ADCS){
+									switch(index - 2){
+										case 0:
+											//flags
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(adc_settings[sysex_setting_index].flags)), byte & ADC_FLAGS);
+											break;
+										case 1:
+											//channel
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(adc_settings[sysex_setting_index].chan)), byte & 0x0f);
+											break;
+										case 2:
+											//num
+											eeprom_busy_wait();
+											eeprom_write_byte((void *)(&(adc_settings[sysex_setting_index].num)), byte & 0x7f);
+											send_ack = true;
+											break;
+										default:
+											//if there is more data, ditch it
+											sysex_in = false;
+											sysex_in_type = SYSEX_INVALID;
+											break;
+									} 
+								} else {
+									sysex_in = false;
+									sysex_in_type = SYSEX_INVALID;
+								}
 							} else {
 								sysex_in = false;
 								sysex_in_type = SYSEX_INVALID;
@@ -638,10 +695,21 @@ TASK(ADC_Task)
 		else
 			new_adc = (new_adc >> 1) & 0x7F;
 		if(new_adc != adc[index]){
-			//XXX make direction, index and channel configurable
-			Buffer_StoreElement(&midiout_buf, 0x80 | 10);
-			Buffer_StoreElement(&midiout_buf, index + 64);
-			Buffer_StoreElement(&midiout_buf, 127 - new_adc);
+			uint8_t flags = eeprom_read_byte((void *)&(adc_settings[index].flags));
+			uint8_t chan = eeprom_read_byte((void *)&(adc_settings[index].chan));
+			uint8_t num = eeprom_read_byte((void *)&(adc_settings[index].num));
+			uint8_t val = new_adc;
+			//it is already inverted, so if we don't want inverted, we do 127 - new_adc
+			if(!(flags & ADC_INVERT))
+				val = 127 - new_adc;
+			if(flags & ADC_USE_NRPN) {
+				Buffer_StoreElement(&midiout_buf, 0x80 | chan);
+				Buffer_StoreElement(&midiout_buf, num);
+				Buffer_StoreElement(&midiout_buf, val);
+			} else {
+				//we're still only using 7 bits here
+				storeNRPN(num, ((uint16_t)val) << 7, chan);
+			}
 			adc[index] = new_adc;
 		}
 		//enable and start another conversion

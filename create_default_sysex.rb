@@ -1,4 +1,5 @@
 NUM_BOARDS = 2
+NUM_ADC = 4
 SYSEX_FILE = "default.syx"
 #dev, buzzr, 0
 SYSEX_HEADER = [125, 98, 117, 122, 122, 114, 0]
@@ -13,6 +14,9 @@ ENC_ABSOLUTE = 0x1
 ENC_DETENT_ONLY = 0x2
 ENC_BUTTON_MUL = 0x10
 ENC_USE_NRPN = 0x4
+
+ADC_INVERT = 0x1
+ADC_USE_NRPN = 0x4
 
 File.open(SYSEX_FILE, "w"){ |f|
   #encoders
@@ -51,6 +55,21 @@ File.open(SYSEX_FILE, "w"){ |f|
     f.print i.chr
     f.print 0.chr
     f.print((i + NUM_BOARDS * 8).chr)
+    f.print SYSEX_END.chr
+  end
+  NUM_ADC.times do |i|
+    f.print SYSEX_BEGIN.chr
+    SYSEX_HEADER.each do |h|
+      f.print h.chr
+    end
+    f.print SET_ADC_DATA.chr
+    f.print i.chr
+    #clear flags
+    f.print 0.chr
+    #channel 11
+    f.print 11.chr
+    #use i as the num
+    f.print i.chr
     f.print SYSEX_END.chr
   end
 }

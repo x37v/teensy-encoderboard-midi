@@ -39,6 +39,7 @@
 #define VERSION 1
 #define HISTORY 4
 #define NUMBOARDS 2
+#define NUM_ADCS 4
 #define ENC_BTN_CC_OFFSET 16
 #define BTN_CC_OFFSET 32
 
@@ -58,8 +59,9 @@ typedef enum {
 	RET_NUM_BOARDS = 9,
 	RET_ENCODER_DATA = 10,
 	RET_BUTTON_DATA = 11,
+	RET_ADC_DATA = 12,
 	//other
-	SYSEX_INVALID = 12,
+	SYSEX_INVALID = 13,
 	JUMP_TO_BOOTLOADER = 127
 } sysex_t;
 
@@ -91,8 +93,13 @@ typedef struct {
 //if set then we send the encoder values as NRPNs
 #define ENC_USE_NRPN 0x4
 
-//falid flags for encoders
+//valid flags for encoders
 #define ENC_FLAGS (ENC_ABSOLUTE | ENC_DETENT_ONLY | ENC_BUTTON_MUL | ENC_USE_NRPN)
+
+#define ADC_INVERT 0x1
+#define ADC_USE_NRPN 0x4
+
+#define ADC_FLAGS (ADC_USE_NRPN | ADC_INVERT)
 
 typedef struct {
 	//settings
@@ -105,6 +112,15 @@ typedef struct {
 	//button
 	midi_cc_t btn;
 } encoder_t;
+
+typedef struct {
+	//settings
+	uint8_t flags;
+
+	//which midi channel and which cc number
+	uint8_t chan;
+	uint8_t num;
+} adc_t;
 
 /* Macros: */
 /** MIDI command for a note on (activation) event */
